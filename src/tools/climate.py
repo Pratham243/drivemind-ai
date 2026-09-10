@@ -35,4 +35,4 @@ def set_climate_mode(vehicle: VehicleSimulator, mode: str) -> ToolResult:
     if normalized not in valid_modes:
         # Accept freeform natural phrases mapped loosely; unknown -> fail.
         return ToolResult.fail(f"Unknown climate mode '{mode}'")
-    return ToolResult.ok(mode=normalized)
+    return vehicle.set_climate_mode(normalized)

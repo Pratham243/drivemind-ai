@@ -18,6 +18,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from src.preprocessing.cleaner import clean_for_transformer
+
 try:
     import numpy as np
     import torch
@@ -77,8 +79,13 @@ class TransformerIntentClassifier:
         ).to(self.device)
 
     def _encode(self, texts: list[str]) -> dict:
+        # Light normalization only (Unicode NFKC + whitespace collapse) —
+        # case and punctuation are preserved for the subword tokenizer, per
+        # the traditional-ML-vs-transformer preprocessing split documented
+        # in src/preprocessing/cleaner.py.
+        normalized = [clean_for_transformer(t) for t in texts]
         return self.tokenizer(
-            texts,
+            normalized,
             padding=True,
             truncation=True,
             max_length=self.max_length,

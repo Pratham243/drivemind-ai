@@ -10,9 +10,11 @@ services:
       - LOG_LEVEL=INFO
       # Optionally set OPENAI_API_KEY here (or via `docker compose --env-file .env`)
       # to enable the real LLM provider; the app runs fine without it.
-    volumes:
-      - ./models:/app/models
-      - ./data:/app/data
+    # No volume mount for models/data: the image trains its own baseline
+    # model during build (see Dockerfile), so it is self-contained. Bind-
+    # mounting host ./models or ./data here would shadow that trained
+    # model with the host's (gitignored, possibly empty/nonexistent)
+    # directory, breaking inference at runtime.
 
   dashboard:
     build:

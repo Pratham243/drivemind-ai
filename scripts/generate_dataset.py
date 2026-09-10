@@ -221,11 +221,18 @@ def build_templates(rng: random.Random) -> dict[str, list[tuple[str, str, dict]]
             ),
         ],
         "climate_control": [
-            ("Turn on the AC", "easy", {}),
-            ("Turn off the air conditioning", "easy", {}),
-            ("Switch on climate control", "medium", {}),
-            ("Turn on the fan", "easy", {}),
-            ("Can you turn off the heater", "medium", {}),
+            # These templates have no {placeholder} text to substitute, but
+            # reuse the filler mechanism purely to attach a fixed
+            # ground-truth `mode` entity per template (the placeholder key
+            # "_" never appears in the template text, so text.replace() is
+            # a no-op — only the entities[entity_key]=value assignment
+            # takes effect). Ground truth mirrors the deterministic
+            # extraction logic in src/nlu/entity_extractor.py.
+            ("Turn on the AC", "easy", {"_": ("mode", ["ac_on"])}),
+            ("Turn off the air conditioning", "easy", {"_": ("mode", ["ac_off"])}),
+            ("Switch on climate control", "medium", {"_": ("mode", ["ac_on"])}),
+            ("Turn on the fan", "easy", {"_": ("mode", ["fan_on"])}),
+            ("Can you turn off the heater", "medium", {"_": ("mode", ["heater_off"])}),
         ],
         "vehicle_status": [
             ("What's my vehicle status?", "easy", {}),
@@ -379,7 +386,14 @@ def build_templates(rng: random.Random) -> dict[str, list[tuple[str, str, dict]]
             (
                 "Text {contact} that I'm on my way",
                 "medium",
-                {"contact": ("phone_contact", CONTACTS)},
+                {
+                    "contact": ("phone_contact", CONTACTS),
+                    # Static ground-truth entity via the hidden-placeholder
+                    # trick (see the climate_control templates above) —
+                    # mirrors src/nlu/entity_extractor.py's "that <body>"
+                    # regex extraction for message_body.
+                    "_": ("message_body", ["I'm on my way"]),
+                },
             ),
             ("Send {contact} a text", "easy", {"contact": ("phone_contact", CONTACTS)}),
             (

@@ -78,7 +78,7 @@ with col_vehicle:
             st.json(status["tire_pressure_bar"])
         with st.expander("Media"):
             st.json(status["media"])
-        st.caption(f"Ambient light: {status['ambient_light_color']}")
+        st.caption(f"Ambient light: {status['ambient_light_color']} | Climate: {status['climate_mode']}")
         if status["navigation_active"]:
             st.info(f"Navigating to {status['navigation_destination']}")
 

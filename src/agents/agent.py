@@ -32,11 +32,10 @@ _RESPONSE_TEMPLATES: dict[str, str] = {
     "temperature {temperature_c}°C, speed {speed_kmh} km/h, range {range_km} km.",
     "get_battery_level": "Your battery is at {battery_pct}%.",
     "get_range": "You have {range_km} km of range remaining.",
-    "get_tire_pressure": "Tire pressure: {data}.",
     "set_temperature": "Temperature set to {temperature_c}°C.",
     "increase_temperature": "Increased the temperature to {temperature_c}°C.",
     "decrease_temperature": "Decreased the temperature to {temperature_c}°C.",
-    "set_climate_mode": "Climate mode set to {mode}.",
+    "set_climate_mode": "Climate mode set to {climate_mode}.",
     "find_charging_stations": "Found {count} charging station(s) near {location}.",
     "find_parking": "Found {available_spots} parking spot(s) near {location} ({nearest_garage}).",
     "start_navigation": "Starting navigation to {destination} — ETA {eta_minutes} minutes "
@@ -53,7 +52,7 @@ _RESPONSE_TEMPLATES: dict[str, str] = {
     "open_window": "Opened the {window}.",
     "close_window": "Closed the {window}.",
     "adjust_seat": "Adjusted {seat}.",
-    "set_ambient_lighting": "Ambient lighting set to {color}.",
+    "set_ambient_lighting": "Ambient lighting set to {ambient_light_color}.",
     "search_restaurants": "Found {count} {cuisine} restaurant(s) near {location}.",
     "get_weather": "Weather in {location}: {condition}, {temperature_c}°C.",
 }
@@ -137,8 +136,21 @@ class AgentController:
             reason = step.tool_result.get("error", "an unknown error")
             return f"Sorry, I couldn't do that: {reason}."
 
-        template = _RESPONSE_TEMPLATES.get(step.selected_tool)
         data = step.tool_result.get("data", {})
+
+        # get_tire_pressure returns one of two shapes depending on whether a
+        # specific tire was requested (`tire`+`pressure_bar`) or all tires
+        # were (`tire_pressure_bar`), so it can't use a single static
+        # .format() template — handle it explicitly instead.
+        if step.selected_tool == "get_tire_pressure":
+            if "tire_pressure_bar" in data:
+                parts = ", ".join(
+                    f"{k.replace('_', ' ')}: {v} bar" for k, v in data["tire_pressure_bar"].items()
+                )
+                return f"Tire pressure — {parts}."
+            return f"Tire pressure for {data.get('tire')}: {data.get('pressure_bar')} bar."
+
+        template = _RESPONSE_TEMPLATES.get(step.selected_tool)
         if template is None:
             return f"Done: {data}."
         try:

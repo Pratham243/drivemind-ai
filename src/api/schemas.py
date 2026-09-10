@@ -57,6 +57,7 @@ class VehicleStatusResponse(BaseModel):
     tire_pressure_bar: dict[str, float]
     seats: dict[str, str]
     ambient_light_color: str
+    climate_mode: str
     navigation_active: bool
     navigation_destination: str | None
     media: dict[str, Any]

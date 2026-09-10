@@ -1,8 +1,11 @@
 .PHONY: setup data validate train-baseline train-transformer evaluate test lint format api dashboard docker-up docker-down
 
+# Note: creates the venv but does NOT install into it directly (the venv's
+# pip lives at .venv/bin/pip on Linux/macOS vs .venv/Scripts/pip.exe on
+# Windows). Activate the venv after this step, then run `pip install -r
+# requirements.txt` — see README "Installation & local setup".
 setup:
 	python -m venv .venv
-	.venv/bin/pip install -r requirements.txt
 
 data:
 	python scripts/generate_dataset.py

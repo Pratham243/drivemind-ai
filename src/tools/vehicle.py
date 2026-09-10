@@ -57,6 +57,7 @@ class VehicleState:
         }
     )
     ambient_light_color: str = "white"
+    climate_mode: str = "off"  # e.g. "ac_on", "fan_off", "heater_on"
     navigation_active: bool = False
     navigation_destination: str | None = None
     media: MediaState = field(default_factory=MediaState)
@@ -71,6 +72,7 @@ class VehicleState:
             "tire_pressure_bar": dict(self.tire_pressure_bar),
             "seats": dict(self.seats),
             "ambient_light_color": self.ambient_light_color,
+            "climate_mode": self.climate_mode,
             "navigation_active": self.navigation_active,
             "navigation_destination": self.navigation_destination,
             "media": {
@@ -148,6 +150,10 @@ class VehicleSimulator:
     def set_ambient_light(self, color: str) -> ToolResult:
         self.state.ambient_light_color = color
         return ToolResult.ok(ambient_light_color=color)
+
+    def set_climate_mode(self, mode: str) -> ToolResult:
+        self.state.climate_mode = mode
+        return ToolResult.ok(climate_mode=mode)
 
     def start_navigation(self, destination: str) -> ToolResult:
         self.state.navigation_active = True

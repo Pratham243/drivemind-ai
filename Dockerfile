@@ -13,12 +13,19 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 COPY configs/ configs/
 COPY scripts/ scripts/
-COPY data/ data/
-COPY models/ models/
 COPY app/ app/
 
 ENV PYTHONPATH=/app
 ENV NLU_MODEL=baseline
+
+# data/ and models/ are gitignored (reproducible artifacts, not committed —
+# see .gitignore), so they do not exist in a fresh clone/build context.
+# `COPY data/` or `COPY models/` here would fail outright since the source
+# path wouldn't exist. Instead, generate the dataset and train the baseline
+# model as part of the image build, making the image fully self-contained.
+RUN python scripts/generate_dataset.py && \
+    python scripts/validate_dataset.py && \
+    python scripts/train_baseline.py
 
 EXPOSE 8000
 

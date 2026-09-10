@@ -177,14 +177,14 @@ Dataset generation → Annotation schema validation → Data-quality checks
 - LLM abstraction with automatic offline fallback (`MockLLMProvider`) — no API key required
   to run the full system.
 - Agent controller with real multi-step task decomposition and execution.
-- 20 automotive tools across climate, navigation, charging, media, comms, comfort, and
+- 26 automotive tools across climate, navigation, charging, media, comms, comfort, and
   information lookup.
 - In-memory vehicle simulator that is *actually mutated* by tool calls.
 - Safety validation layer that rejects out-of-range, malformed, or unknown tool calls
   *before* they reach vehicle state — with real rejection tests.
 - FastAPI backend with full OpenAPI docs.
 - Streamlit dashboard showing vehicle state, conversation, and the full agent trace.
-- 79 automated tests (pytest) covering happy paths *and* negative/safety cases.
+- 118 automated tests (pytest) covering happy paths *and* negative/safety cases.
 - Docker + docker-compose for the API and dashboard.
 - GitHub Actions CI: lint → test → train → build Docker image.
 - Real evaluation reports (no fabricated numbers) under `reports/evaluation/`.
@@ -238,7 +238,7 @@ python scripts/validate_dataset.py
 This produces `reports/evaluation/data_quality_report.json` and two charts under
 `reports/figures/` (`class_distribution.png`, `split_distribution.png`).
 
-**Real finding from this run**: the validator flagged **260 duplicate texts** (out of 2,715)
+**Real finding from this run**: the validator flagged **245 duplicate texts** (out of 2,715)
 — an honest artifact of template-based generation combined with a small amount of
 intentional near-duplicate noise, not a hidden bug. This is exactly the kind of issue a data
 quality pipeline is supposed to catch, and is discussed further in
@@ -253,9 +253,9 @@ trained via `scripts/train_baseline.py`.
 
 | Metric | Value |
 |---|---|
-| Accuracy | **0.9927** |
-| Macro F1 | **0.9922** |
-| Weighted F1 | ~0.9927 |
+| Accuracy | **0.9855** |
+| Macro F1 | **0.9851** |
+| Weighted F1 | **0.9855** |
 
 (Full metrics including per-class confusion matrix: `reports/evaluation/baseline_metrics.json`.)
 
@@ -278,31 +278,36 @@ python scripts/train_transformer.py
 
 | Epoch | Train loss | Val accuracy |
 |---|---|---|
-| 1 | 1.7904 | 0.944 |
-| 2 | 0.2518 | 0.9851 |
-| 3 | 0.1034 | 0.9925 |
+| 1 | 1.8410 | 0.9515 |
+| 2 | 0.2738 | 0.9925 |
+| 3 | 0.1072 | 0.9963 |
 
-**Test set**: accuracy **0.9891**, macro F1 **0.9881**. Training took **427.6 s (~7.1 min)**
-on CPU for all 3 epochs over 2,172 training examples — comfortably within "runnable on a
-laptop." Full numbers: `reports/evaluation/transformer_metrics.json`.
+**Test set**: accuracy **0.9927**, macro F1 **0.9918**. Training took **632.4 s (~10.5 min)**
+on CPU for all 3 epochs over 2,172 training examples — slower than the baseline but still
+comfortably within "runnable on a laptop" (no GPU required). Full numbers:
+`reports/evaluation/transformer_metrics.json`.
 
 ### Baseline vs. transformer — the real comparison
 
 | Model | Accuracy | Macro F1 |
 |---|---|---|
-| TF-IDF + Logistic Regression | **0.9927** | **0.9922** |
-| DistilBERT (fine-tuned) | 0.9891 | 0.9881 |
+| TF-IDF + Logistic Regression | 0.9855 | 0.9851 |
+| DistilBERT (fine-tuned) | **0.9927** | **0.9918** |
 
-The baseline slightly **outperforms** the transformer here — a genuine, non-cherry-picked
-result (see `reports/figures/model_comparison.png`). This is expected, not a bug: with a
-template-generated dataset this clean and lexically distinctive per intent, TF-IDF features
-already separate the classes almost perfectly, and 2,172 training examples is a small
-fine-tuning set for a 66M-parameter model. The transformer is *not* the default model in
-this project for that reason (`NLU_MODEL=baseline`). Its value here is demonstrating a
-correct, working fine-tuning pipeline; on a larger, more lexically diverse (non-templated)
-real-world dataset, the transformer's contextual embeddings would be expected to close the
-gap and likely overtake the linear baseline — particularly on typo/paraphrase robustness
-(see [Error analysis](#error-analysis)).
+The transformer **outperforms** the baseline here — a genuine, non-cherry-picked result
+(see `reports/figures/model_comparison.png`). All 4 of the baseline's test-set
+misclassifications are typo-corrupted utterances (see [Error analysis](#error-analysis) for
+the specific examples and a direct side-by-side of both models on those exact 4 cases);
+running the transformer on them shows it recovers 2 of the 4, a partial but real
+improvement consistent with DistilBERT's subword tokenizer degrading more gracefully on
+misspellings than whole-word TF-IDF features, which lose a corrupted token's signal
+entirely. This is a genuinely useful, non-obvious finding from actually running both models
+on the same examples rather than asserting one architecture is categorically better. The
+baseline remains the *default* model
+(`NLU_MODEL=baseline`) for this project regardless, since it trains in seconds vs. ~10
+minutes and the accuracy gap here (0.72 points) is small relative to that cost — but
+`NLU_MODEL=transformer` is a one-line config change for anyone who wants the extra
+robustness.
 
 ## LLM layer
 
@@ -342,7 +347,7 @@ The LLM is invoked in two places:
 
 ## Tools
 
-20 tools across 8 modules in `src/tools/`:
+26 tools across 8 modules in `src/tools/`:
 
 | Module | Tools |
 |---|---|
@@ -421,34 +426,70 @@ docker compose up --build
 ```
 Builds and runs two services:
 - `api` (Dockerfile) — FastAPI backend on port 8000, `NLU_MODEL=baseline` by default (no
-  heavy ML dependencies in this image, keeps build fast).
+  heavy ML dependencies in this image, keeps build fast). `data/` and `models/` are
+  gitignored (reproducible artifacts, not committed — see [Dataset](#dataset)), so a fresh
+  clone's build context doesn't contain them; the image generates the dataset and trains
+  the baseline model as part of the `docker build` itself (`RUN python
+  scripts/generate_dataset.py && ... && python scripts/train_baseline.py`), making it
+  fully self-contained. `docker-compose.yml` deliberately does **not** bind-mount
+  `./models`/`./data` over the container — doing so would shadow the model trained during
+  the build with the host's (possibly empty) directory.
 - `dashboard` (`docker/Dockerfile.streamlit`) — Streamlit UI on port 8501, pointed at the
   `api` service.
 
-> **Status: NOT VERIFIED in this environment.** Docker Engine is not installed on the
-> machine this project was built on, so `docker compose up --build` has not been run here.
-> The Dockerfiles/compose file are written and reviewed but unbuilt — please verify on a
-> machine with Docker installed before relying on them.
+> **Status: partially verified.** Docker Engine is not installed on the machine this
+> project was built on, so the literal `docker build` / `docker compose up --build`
+> commands have not been run. To still verify correctness without Docker, the exact `RUN`
+> chain from the Dockerfile (`generate_dataset.py` → `validate_dataset.py` →
+> `train_baseline.py`) was executed end-to-end in an isolated virtualenv containing only
+> `requirements.txt` (matching the image's dependency set exactly, confirmed by diffing
+> installed packages) starting from a clean copy of `src/`/`configs/`/`scripts/`/`app/`
+> with no pre-existing `data/`/`models/` — reproducing a fresh-clone build context. The
+> resulting model was then loaded and served with `uvicorn` from that same isolated
+> environment and hit with real HTTP requests (`/health`, `/chat`), which worked
+> correctly. This exercises the same commands and dependency set the Dockerfile runs, but
+> is not a substitute for an actual `docker build` — please verify that too on a machine
+> with Docker installed before relying on it in production.
 
 ## Testing
 
 ```bash
 pytest tests/ -v
 ```
-**79 tests, all passing**, across:
+**118 tests** (117 passing + 1 conditionally skipped in this environment — see below), across:
 - `test_preprocessing.py` — cleaning/tokenization
-- `test_nlu.py` — intent classification, entity extraction, LLM mock, NLU router
-- `test_tools.py` — all 20 tools, including negative cases (invalid window, negative power, etc.)
+- `test_nlu.py` — intent classification, entity extraction (including `artist`, `message_body`,
+  and `mode`, three entity types found declared in the schema but never actually
+  implemented by the extractor), LLM mock, NLU router
+- `test_tools.py` — all 26 tools, including negative cases (invalid window, negative power, etc.)
 - `test_safety.py` — 13 dedicated safety-rejection tests (temperature, volume, unknown tool,
   unknown window, high-speed window block, missing params, wrong types)
-- `test_agent.py` — all 10 canonical scenarios from the spec, plus multi-step and
-  garbage-input robustness
-- `test_api.py` — FastAPI endpoints, including safety-rejection status codes
+- `test_agent.py` — all 10 canonical scenarios from the spec, plus multi-step, garbage-input
+  robustness, and two whole-system invariant tests added during an engineering audit: one
+  asserting every registered tool's `needs_vehicle` flag matches its function signature, and
+  one driving every tool through the real agent to assert no response silently falls back to
+  a raw `Done: {...}` dict — together these caught the `set_climate_mode` wiring bug and two
+  response-template key mismatches (`get_tire_pressure`, `set_ambient_lighting`)
+- `test_api.py` — FastAPI endpoints, safety-rejection status codes, and a schema-completeness
+  check that the `/vehicle/status` response always exposes every `VehicleState` field (added
+  after `climate_mode` was found silently dropped by pydantic's default `extra="ignore"`)
+- `test_model_manager.py` — NLU model selection and its fallback-to-baseline behavior when a
+  requested transformer isn't available
+- `test_transformer.py`, `test_llm_provider.py` — transformer inference and `OpenAIProvider`'s
+  JSON-extraction/error-handling logic (mocked, no network calls); both skip cleanly if their
+  optional dependency isn't installed
+- `test_evaluation.py` — classification metrics, confusion-matrix analysis, and the agent
+  evaluation harness itself
 - `test_dataset_quality.py` — annotation validator + data-quality analyzer edge cases
+- `test_voice.py` — the optional speech-to-text seam reports unavailable cleanly rather than
+  crashing
 
-Tests that depend on a trained model (`test_nlu.py`, `test_agent.py`, `test_api.py`)
-`pytest.skip()` cleanly if `models/baseline/model.joblib` doesn't exist yet, rather than
-failing — run `python scripts/train_baseline.py` first.
+Tests that depend on a trained model `pytest.skip()` cleanly if the corresponding artifact
+doesn't exist yet, rather than failing — run `python scripts/train_baseline.py` (required)
+and `python scripts/train_transformer.py` (optional) first. In this environment, with both
+models trained, exactly one test skips by design: `test_model_manager.py`'s
+transformer-unavailable-fallback test, which only applies when the transformer is *not*
+trained.
 
 ## CI/CD
 
@@ -474,8 +515,8 @@ All numbers below are read directly from `reports/evaluation/*.json`, produced b
 
 | Model | Accuracy | Macro F1 | Weighted F1 |
 |---|---|---|---|
-| TF-IDF + Logistic Regression (baseline) | 0.9927 | 0.9922 | 0.9927 |
-| DistilBERT (transformer) | 0.9891 | 0.9881 | 0.9890 |
+| TF-IDF + Logistic Regression (baseline) | 0.9855 | 0.9851 | 0.9855 |
+| DistilBERT (transformer) | 0.9927 | 0.9918 | 0.9928 |
 
 ### Agent evaluation (`agent_evaluation.json`)
 
@@ -491,7 +532,7 @@ safety/edge cases (`scripts/evaluate.py: build_agent_eval_cases`):
 | Safety rejection accuracy | 1.0 |
 | Fallback rate (LLM used) | 0.0 |
 | Error rate | 0.0 |
-| Avg latency | ~8 ms/request |
+| Avg latency | ~13 ms/request (p95 ~154 ms) |
 
 These scenarios are intentionally the same style of utterance as the training data — a
 perfect score here demonstrates the pipeline wiring is correct, **not** that the system
@@ -500,20 +541,40 @@ generalizes to arbitrary unseen phrasing (see [Limitations](#limitations)).
 ## Error analysis
 
 `reports/evaluation/error_analysis.json` — real misclassifications from the baseline model
-on the 275-example test set (2 out of 275):
+on the 275-example test set (4 out of 275):
 
-1. `"What's my TEA?"` (a typo of "ETA" injected by the dataset's noise generator) →
-   predicted `range_query`, true label `navigation`. A legitimately confusable pair once the
-   "ETA" signal is corrupted into "TEA" — a genuine tokenization/vocabulary limitation of a
-   bag-of-words model, not a bug.
-2. `"Opne the driver window"` (typo of "Open") → predicted `close_window`, true label
-   `open_window`. The typo destroys the strongest lexical signal ("Open"), and the model
-   falls back on weaker cues.
+1. `"Make it ocoler"` (typo of "cooler") → predicted `change_volume`, true label
+   `decrease_temperature`.
+2. `"Lower the tempertaure a bit"` (typo of "temperature") → predicted `change_volume`, true
+   label `decrease_temperature`.
+3. `"Turn down th evolume"` (typo of "the volume") → predicted `decrease_temperature`, true
+   label `change_volume`.
+4. `"Is it going t orain today?"` (typo of "to rain") → predicted `general_question`, true
+   label `weather_query`.
 
-Both are real limitations of (a) a linear bag-of-words classifier and (b) an intentionally
-noisy synthetic dataset — exactly the failure mode a larger/more diverse training set or a
-transformer with subword tokenization (which is more typo-robust than whole-word TF-IDF
-features) would be expected to reduce. This is discussed further in
+The first three all share one root cause: "Lower"/"Turn down"/"decrease" is shared
+vocabulary between `decrease_temperature` and `change_volume` in this dataset, and once a
+typo corrupts the one word that would disambiguate them ("cooler", "tempertaure" [sic],
+"evolume" [sic]), the bag-of-words baseline has nothing left to distinguish the two intents
+— it falls back on the shared "turn down / lower" signal and effectively guesses. This is a
+genuine, structural limitation of TF-IDF features (each corrupted token becomes an
+out-of-vocabulary unknown, losing all its signal at once) rather than an evaluation
+artifact.
+
+Running the transformer on these same 4 exact utterances (not just aggregate test-set
+accuracy) shows a real, if partial, improvement: it correctly classifies **2 of the 4**
+(`"Make it ocoler"` and `"Lower the tempertaure a bit"`, both → `decrease_temperature`),
+because DistilBERT's subword tokenizer still extracts partial signal from "ocoler" and
+"tempertaure" (they share subword pieces with "cooler"/"temperature") instead of discarding
+the token entirely the way whole-word TF-IDF does. It still misses the other two
+(`"Turn down th evolume"` → predicted `decrease_temperature` again, and `"Is it going t
+orain today?"` → predicted `general_question`), and notably with low confidence throughout
+(0.40–0.85 vs. its typical >0.95 on clean utterances) — meaning the model itself is
+signaling uncertainty on these rather than confidently guessing wrong. This partial-recovery
+pattern is a more honest and more interesting finding than "transformers fix typos": subword
+tokenization helps when enough of the misspelled word's structure survives, but doesn't
+salvage every case, and confidence remains a useful signal for exactly these hard examples
+even when the classifier is a transformer. This is discussed further in
 [Future improvements](#future-improvements).
 
 ## Installation & local setup
@@ -625,7 +686,7 @@ DriveMindAi/
 │   ├── api/                            # FastAPI app, routes, schemas
 │   └── config/                         # settings (.env) + YAML config loading
 ├── app/streamlit_app.py                # dashboard
-├── tests/                              # 79 pytest tests
+├── tests/                              # 118 pytest tests
 ├── configs/{config.yaml,intents.yaml}  # hyperparameters + intent taxonomy
 ├── scripts/                            # generate/validate/train/evaluate CLIs
 ├── models/                             # trained artifacts (gitignored, reproducible)
@@ -651,8 +712,10 @@ DriveMindAi/
 
 ## Limitations
 
-- **NOT COMPLETED**: Docker build/run has not been verified — Docker Engine is not
-  installed in this development environment.
+- **NOT COMPLETED**: the literal `docker build` / `docker compose up --build` commands
+  have not been run — Docker Engine is not installed in this development environment. The
+  Dockerfile's exact build+run chain was verified by other means; see [Docker](#docker)
+  for what was and wasn't actually exercised.
 - **NOT COMPLETED**: GitHub Actions CI has not executed on a real GitHub remote from this
   session — the workflow file is written and its steps verified manually/locally instead.
 - **NOT COMPLETED**: the three notebooks under `notebooks/` could not be executed
@@ -702,9 +765,11 @@ DriveMindAi/
   schema, automated data-quality pipeline, and reproducible seeded generation.
 - Shipped a FastAPI backend + Streamlit dashboard exposing a full agent execution trace
   (intent, entities, tool, safety status, latency) for debuggability.
-- Achieved 99.3% test-set intent classification accuracy on the baseline model and 100%
-  task success on a 16-scenario agent evaluation suite, with all metrics computed from real
-  training/evaluation runs and documented error analysis (no fabricated numbers).
+- Achieved 98.6% test-set intent classification accuracy with a TF-IDF/Logistic Regression
+  baseline and 99.3% with a fine-tuned DistilBERT transformer (measurably better specifically
+  on typo-corrupted inputs), plus 100% task success on a 16-scenario agent evaluation suite —
+  all metrics computed from real training/evaluation runs and documented error analysis (no
+  fabricated numbers).
 
 ## Interview talking points
 
@@ -712,8 +777,13 @@ DriveMindAi/
   an LLM-only design can't guarantee it will never accept `set_temperature(1000)`; a typed,
   validated tool-calling architecture can.
 - **Why TF-IDF *and* a transformer?** To have an honest, real comparison rather than
-  asserting "transformers are better" — in this specific clean/templated dataset regime,
-  the linear baseline already saturates, which itself is a useful, real finding to discuss.
+  asserting either is better outright. Here the transformer does measurably win (0.9927 vs.
+  0.9855 test accuracy), and specifically on typo-corrupted inputs — a genuinely explainable
+  result (subword tokenization degrades more gracefully than whole-word bag-of-words
+  features) rather than an assumed one. The baseline still ships as the default because a
+  ~0.7-point accuracy gap doesn't justify a ~10-minute CPU training time and a >1GB
+  dependency for every deployment — a concrete example of a real trade-off decision, not
+  just "the fancier model wins."
 - **Why is entity extraction rule-based, not ML-based?** Closed vocabulary automotive
   domain + need for 100% predictable behavior in a safety-adjacent system; trade-off is
   explicitly documented as a scalability limitation for open-vocabulary entities.
@@ -731,3 +801,5 @@ DriveMindAi/
 | DistilBERT over BERT-base/RoBERTa | Larger encoders | Must fine-tune in minutes on a CPU laptop |
 | Safety layer as a separate module, not embedded in tools | Validate inside each tool function | Centralizes policy, makes it auditable in one file, and guarantees no tool can be reached without passing through it |
 | In-memory vehicle singleton | SQLite-backed state | Simpler for a single-driver demo; the `ToolResult`/tool-function contract doesn't change if this is swapped out later |
+| Manual PyTorch training loop for the transformer | HF `Trainer` + `accelerate`/`datasets` | Kept `requirements-ml.txt` to only the packages actually imported (`torch`, `transformers`); a manual loop is also more explainable line-by-line in an interview than the `Trainer` abstraction |
+| Docker image trains its own baseline model during `docker build` | `COPY` a pre-trained model from the host | `data/`/`models/` are gitignored reproducible artifacts, not committed — `COPY models/` would fail outright on a fresh clone with no source directory to copy; training in the build makes the image self-contained |

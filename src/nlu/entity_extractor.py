@@ -61,6 +61,17 @@ _GENRES = [
     "r & b",
 ]
 
+_ARTISTS = [
+    "Taylor Swift",
+    "Daft Punk",
+    "Mozart",
+    "Beethoven",
+    "Ed Sheeran",
+    "Beyonce",
+    "Coldplay",
+    "The Beatles",
+]
+
 _WINDOWS = [
     "front left window",
     "front right window",
@@ -108,6 +119,9 @@ _CONTACTS = [
 _TEMP_RE = re.compile(r"(-?\d{1,3})\s*(?:degrees?|°)?", re.IGNORECASE)
 _KW_RE = re.compile(r"(\d{2,3})\s*kw", re.IGNORECASE)
 _VOLUME_RE = re.compile(r"\bvolume\D{0,10}?(\d{1,3})\b", re.IGNORECASE)
+_MESSAGE_BODY_RE = re.compile(
+    r"\b(?:that|saying|telling (?:them|him|her))\s+(.+?)[.!?]*$", re.IGNORECASE
+)
 
 
 def _find_first(text: str, candidates: list[str]) -> str | None:
@@ -176,6 +190,11 @@ def extract_entities(text: str, intent: str | None = None) -> dict[str, Any]:
         if genre:
             entities["music_genre"] = genre
 
+    if wants("artist"):
+        artist = _find_first(text, _ARTISTS)
+        if artist:
+            entities["artist"] = artist
+
     if wants("window"):
         win = _find_first(text, _WINDOWS)
         if win:
@@ -206,6 +225,11 @@ def extract_entities(text: str, intent: str | None = None) -> dict[str, Any]:
         if contact:
             entities["phone_contact"] = contact.title() if contact.islower() else contact
 
+    if wants("message_body"):
+        match = _MESSAGE_BODY_RE.search(text)
+        if match:
+            entities["message_body"] = match.group(1).strip()
+
     if wants("direction"):
         if any(w in lowered for w in ["up", "louder", "increase", "raise"]):
             entities["direction"] = "up"
@@ -217,5 +241,21 @@ def extract_entities(text: str, intent: str | None = None) -> dict[str, Any]:
             if phrase in lowered:
                 entities["amount"] = phrase
                 break
+
+    if wants("mode"):
+        is_on = bool(re.search(r"\bon\b", lowered))
+        is_off = bool(re.search(r"\boff\b", lowered))
+        if "fan" in lowered:
+            system = "fan"
+        elif "heat" in lowered:
+            system = "heater"
+        elif re.search(r"\bac\b", lowered) or "air condition" in lowered or "climate" in lowered:
+            system = "ac"
+        else:
+            system = None
+        if system and is_on and not is_off:
+            entities["mode"] = f"{system}_on"
+        elif system and is_off and not is_on:
+            entities["mode"] = f"{system}_off"
 
     return entities

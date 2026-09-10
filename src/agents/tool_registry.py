@@ -33,7 +33,7 @@ TOOL_REGISTRY: dict[str, tuple[Callable, bool]] = {
     "set_temperature": (climate.set_temperature, True),
     "increase_temperature": (climate.increase_temperature, True),
     "decrease_temperature": (climate.decrease_temperature, True),
-    "set_climate_mode": (climate.set_climate_mode, False),
+    "set_climate_mode": (climate.set_climate_mode, True),
     "find_charging_stations": (charging.find_charging_stations, False),
     "find_parking": (navigation.find_parking, False),
     "start_navigation": (navigation.start_navigation, True),

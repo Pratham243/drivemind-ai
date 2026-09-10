@@ -49,6 +49,40 @@ def test_entity_extraction_music_genre():
     assert entities.get("music_genre") == "jazz"
 
 
+def test_entity_extraction_artist():
+    # Regression test: `artist` was declared in configs/intents.yaml and
+    # given real ground truth by the dataset generator, but the extractor
+    # never actually implemented it — silently dropping the entity at
+    # inference time despite the training data promising it.
+    entities = extract_entities("Can you play something by Ed Sheeran?", intent="play_music")
+    assert entities.get("artist") == "Ed Sheeran"
+
+
+def test_entity_extraction_message_body():
+    # Regression test: `message_body` was declared for send_message but
+    # never extracted.
+    entities = extract_entities("Text Sarah that I am on my way", intent="send_message")
+    assert entities.get("phone_contact") == "Sarah"
+    assert entities.get("message_body") == "I am on my way"
+
+
+def test_entity_extraction_climate_mode():
+    # Regression test: `mode` was declared for climate_control but never
+    # extracted, and the tool registry separately mis-wired
+    # set_climate_mode's `needs_vehicle` flag — together these meant
+    # climate_control never worked end-to-end. See test_agent.py's
+    # test_scenario_climate_control_mutates_vehicle_state for the
+    # full-pipeline version of this check.
+    assert extract_entities("Turn on the AC", intent="climate_control") == {"mode": "ac_on"}
+    assert extract_entities("Turn off the air conditioning", intent="climate_control") == {
+        "mode": "ac_off"
+    }
+    assert extract_entities("Turn on the fan", intent="climate_control") == {"mode": "fan_on"}
+    assert extract_entities("Can you turn off the heater", intent="climate_control") == {
+        "mode": "heater_off"
+    }
+
+
 def test_entity_extraction_no_false_positive_outside_scope():
     # location should not be extracted for an intent that doesn't use it
     entities = extract_entities("Pause the music please, thanks Berlin", intent="pause_music")

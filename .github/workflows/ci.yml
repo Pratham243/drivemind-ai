@@ -48,22 +48,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-
-      # The Docker image COPYs data/ and models/, but generated dataset and
-      # trained model artifacts are gitignored (reproducible, not checked
-      # in) — so this job regenerates them before building the image.
-      - name: Generate dataset and train baseline model
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          python scripts/generate_dataset.py
-          python scripts/train_baseline.py
-
+      # No host-side dataset/model regeneration needed here: the Dockerfile
+      # itself generates the dataset and trains the baseline model as part
+      # of the image build (data/ and models/ are gitignored, reproducible
+      # artifacts, so the image must not depend on them being pre-built on
+      # the host or checked out from git).
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 

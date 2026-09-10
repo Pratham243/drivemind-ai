@@ -1,8 +1,17 @@
 # Transformer-based NLU (optional). Install only if you want to train/run
 # the DistilBERT intent classifier. The rest of the system works without it.
+#
+# Only torch + transformers are listed: src/models/transformer.py trains
+# with a manual PyTorch loop (see TransformerIntentClassifier.fit), not
+# the HF Trainer API, so `datasets`/`accelerate` are never imported —
+# listing them would be exactly the "unnecessary framework" this project
+# avoids elsewhere (see README "Architecture decisions & trade-offs").
+# `spacy` is likewise not listed: entity extraction is deliberately
+# rule-based (src/nlu/entity_extractor.py); spaCy is named only as a
+# possible *future* extension in the README, not something imported here.
 torch>=2.2
 transformers>=4.38
-datasets>=2.18
-accelerate>=0.27
-spacy>=3.7
+
+# Needed only to open/run the notebooks under notebooks/ (jupyter lab /
+# jupyter notebook / jupyter nbconvert) — not imported by any .py file.
 jupyter>=1.0

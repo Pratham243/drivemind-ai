@@ -84,3 +84,85 @@ def test_scenario_range_query(agent):
 def test_agent_never_raises_on_garbage_input(agent):
     state = agent.handle("asdkjhaskjdh 12903 !!!")
     assert state.final_response  # should still produce *some* response
+
+
+def test_scenario_climate_control_mutates_vehicle_state(agent):
+    # Regression test: set_climate_mode was previously wired into the tool
+    # registry with needs_vehicle=False despite requiring `vehicle` as its
+    # first argument, so every climate_control request silently failed
+    # with a "missing 1 required positional argument: 'vehicle'" tool
+    # execution error. Also regression-covers the entity extractor
+    # previously never producing a `mode` entity at all.
+    state = agent.handle("Turn on the AC.")
+    assert state.intent == "climate_control"
+    assert state.entities.get("mode") == "ac_on"
+    assert state.selected_tool == "set_climate_mode"
+    assert state.safety_status["status"] == "passed"
+    assert state.tool_result["success"] is True
+    assert agent.vehicle.state.climate_mode == "ac_on"
+    assert "couldn't" not in state.final_response.lower()
+
+
+def test_tool_registry_needs_vehicle_matches_function_signature():
+    """Every registered tool's `needs_vehicle` flag must agree with
+    whether its callable actually takes `vehicle` as its first parameter
+    — a mismatch means the tool crashes (or silently gets no vehicle
+    access) the moment the agent actually calls it, exactly like the
+    set_climate_mode bug this test guards against.
+    """
+    import inspect
+
+    from src.agents.tool_registry import TOOL_REGISTRY
+
+    mismatches = []
+    for name, (func, needs_vehicle) in TOOL_REGISTRY.items():
+        params = list(inspect.signature(func).parameters.keys())
+        first_is_vehicle = bool(params) and params[0] == "vehicle"
+        if first_is_vehicle != needs_vehicle:
+            mismatches.append(name)
+    assert not mismatches, f"needs_vehicle mismatch for: {mismatches}"
+
+
+def test_all_response_templates_render_for_every_tool(agent):
+    """Drive one representative, entity-complete utterance per tool
+    through the real agent and assert the response is never the generic
+    '{tool} succeeded but no template matched' fallback — catches
+    template/tool-output key mismatches like set_climate_mode's
+    {mode} vs. {climate_mode}, get_tire_pressure's two response shapes,
+    and set_ambient_lighting's {color} vs. {ambient_light_color}.
+    """
+    utterances = [
+        "Make it warmer",
+        "Make it cooler",
+        "Set the temperature to 22 degrees",
+        "Turn on the AC",
+        "What is my vehicle status",
+        "What is my battery level",
+        "How far can I drive",
+        "What is my tire pressure",
+        "Check the front left tire pressure",
+        "Find a charging station near Berlin",
+        "Find parking near Berlin",
+        "Navigate to Berlin Brandenburg Airport",
+        "Cancel navigation",
+        "What is the traffic like",
+        "Play some jazz",
+        "Pause the music",
+        "Next song",
+        "Turn up the volume",
+        "Call Mom",
+        "Send a message to Sarah",
+        "Open the front left window",
+        "Close the front left window",
+        "Adjust my driver seat",
+        "Change the ambient lighting to blue",
+        "Find me an Italian restaurant nearby",
+        "What is the weather in Berlin",
+    ]
+    fallbacks = []
+    for utterance in utterances:
+        state = agent.handle(utterance)
+        step = state.steps[0]
+        if step.tool_result.get("success") and state.final_response.startswith("Done: {"):
+            fallbacks.append((utterance, state.final_response))
+    assert not fallbacks, f"Generic fallback response for: {fallbacks}"

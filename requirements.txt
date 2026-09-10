@@ -22,7 +22,6 @@ requests>=2.31
 
 # Testing
 pytest>=8.0
-pytest-asyncio>=0.23
 
 # Visualization
 matplotlib>=3.8
@@ -35,5 +34,5 @@ seaborn>=0.13
 # Install with:
 #   pip install -r requirements.txt
 #   pip install -r requirements-ml.txt    # transformer model support
-#   pip install -r requirements-llm.txt   # OpenAI / LangChain / LangGraph support
+#   pip install -r requirements-llm.txt   # real OpenAI LLM provider support
 # ---------------------------------------------------------------------------

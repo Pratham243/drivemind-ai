@@ -51,6 +51,21 @@ def test_vehicle_status_endpoint():
     assert "temperature_c" in body
 
 
+def test_vehicle_status_schema_matches_full_vehicle_state():
+    """Regression test: VehicleStatusResponse previously didn't declare
+    `climate_mode`, so pydantic's default extra='ignore' behavior silently
+    dropped it from every /vehicle/status response with no error anywhere
+    — the field just vanished. Assert the two stay in sync so a future
+    VehicleState field addition fails loudly instead of silently.
+    """
+    from src.tools.vehicle import VehicleSimulator
+
+    state_keys = set(VehicleSimulator().state.to_dict().keys())
+    response = client.get("/vehicle/status")
+    response_keys = set(response.json().keys())
+    assert state_keys == response_keys
+
+
 def test_vehicle_climate_endpoint_valid_temperature():
     response = client.post("/vehicle/climate", json={"temperature": 21})
     assert response.status_code == 200

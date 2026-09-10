@@ -43,7 +43,6 @@ ENTITY_TYPES: dict[str, type] = {
     "window": str,
     "seat": str,
     "color": str,
-    "intensity": str,
     "restaurant_cuisine": str,
     "tire": str,
     "mode": str,

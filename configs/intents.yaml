@@ -119,8 +119,8 @@ intents:
     tool: adjust_seat
 
   ambient_lighting:
-    description: Change ambient lighting color/intensity
-    entities: [color, intensity]
+    description: Change ambient lighting color
+    entities: [color]
     tool: set_ambient_lighting
 
   restaurant_search:

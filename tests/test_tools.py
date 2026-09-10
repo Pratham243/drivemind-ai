@@ -1,11 +1,22 @@
 import pytest
 
 from src.tools.charging import find_charging_stations
-from src.tools.climate import decrease_temperature, increase_temperature, set_temperature
+from src.tools.climate import (
+    decrease_temperature,
+    increase_temperature,
+    set_climate_mode,
+    set_temperature,
+)
 from src.tools.comfort import adjust_seat, close_window, open_window, set_ambient_lighting
 from src.tools.communication import make_phone_call, send_message
 from src.tools.media import change_volume, next_song, pause_music, play_music
-from src.tools.navigation import cancel_navigation, find_parking, get_traffic, start_navigation
+from src.tools.navigation import (
+    cancel_navigation,
+    find_parking,
+    get_traffic,
+    search_navigation,
+    start_navigation,
+)
 from src.tools.restaurant import search_restaurants
 from src.tools.vehicle import VehicleSimulator
 from src.tools.weather import get_weather
@@ -143,3 +154,75 @@ def test_adjust_seat_and_ambient_lighting(vehicle):
     result = set_ambient_lighting(vehicle, "blue")
     assert result.success
     assert vehicle.state.ambient_light_color == "blue"
+
+
+def test_get_vehicle_status_reflects_current_state(vehicle):
+    vehicle.state.temperature_c = 25
+    result = vehicle.get_status()
+    assert result.success
+    assert result.data["temperature_c"] == 25
+    assert "battery_pct" in result.data
+    assert "range_km" in result.data
+
+
+def test_get_battery_level_returns_current_value(vehicle):
+    vehicle.state.battery_pct = 42
+    result = vehicle.get_battery_level()
+    assert result.success
+    assert result.data["battery_pct"] == 42
+
+
+def test_get_range_returns_current_value(vehicle):
+    vehicle.state.range_km = 150
+    result = vehicle.get_range()
+    assert result.success
+    assert result.data["range_km"] == 150
+
+
+def test_get_tire_pressure_all(vehicle):
+    result = vehicle.get_tire_pressure("all")
+    assert result.success
+    assert set(result.data["tire_pressure_bar"].keys()) == {
+        "front_left",
+        "front_right",
+        "rear_left",
+        "rear_right",
+    }
+
+
+def test_get_tire_pressure_single_tire(vehicle):
+    result = vehicle.get_tire_pressure("front left")
+    assert result.success
+    assert result.data["tire"] == "front left"
+    assert isinstance(result.data["pressure_bar"], float)
+
+
+def test_get_tire_pressure_rejects_unknown_tire(vehicle):
+    result = vehicle.get_tire_pressure("sunroof")
+    assert not result.success
+
+
+def test_search_navigation_reports_no_active_route(vehicle):
+    result = search_navigation(vehicle)
+    assert result.success
+    assert result.data["navigation_active"] is False
+
+
+def test_search_navigation_reports_active_route(vehicle):
+    start_navigation(vehicle, "Berlin Brandenburg Airport")
+    result = search_navigation(vehicle)
+    assert result.success
+    assert result.data["navigation_active"] is True
+    assert result.data["destination"] == "Berlin Brandenburg Airport"
+
+
+def test_set_climate_mode_accepts_known_mode_and_updates_state(vehicle):
+    result = set_climate_mode(vehicle, mode="ac_on")
+    assert result.success
+    assert result.data["climate_mode"] == "ac_on"
+    assert vehicle.state.climate_mode == "ac_on"
+
+
+def test_set_climate_mode_rejects_unknown_mode(vehicle):
+    result = set_climate_mode(vehicle, mode="warp_drive")
+    assert not result.success

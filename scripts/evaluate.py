@@ -151,9 +151,27 @@ def run_model_comparison() -> dict | None:
     return comparison
 
 
+def _collect_errors(texts, true_intents, pred_intents, difficulties) -> list[dict]:
+    errors = []
+    for text, true_intent, pred_intent, difficulty in zip(
+        texts, true_intents, pred_intents, difficulties
+    ):
+        if true_intent != pred_intent:
+            errors.append(
+                {
+                    "text": text,
+                    "true_intent": true_intent,
+                    "predicted_intent": pred_intent,
+                    "difficulty": difficulty,
+                }
+            )
+    return errors
+
+
 def run_error_analysis() -> dict:
     """Real misclassified examples pulled from the baseline model's test
-    predictions (and transformer's, if available) — not fabricated.
+    predictions and the transformer's, if it has been trained — not
+    fabricated.
     """
     from src.models.baseline import BaselineIntentClassifier
 
@@ -162,27 +180,50 @@ def run_error_analysis() -> dict:
     test_df = get_split(df, "test")
 
     baseline_path = PROJECT_ROOT / cfg["baseline_model"]["path"]
-    errors = {"baseline_errors": [], "note": ""}
+    errors: dict = {
+        "baseline_errors": [],
+        "transformer_errors": [],
+        "note": "",
+        "transformer_note": "",
+    }
     if baseline_path.exists():
         model = BaselineIntentClassifier.load(baseline_path)
         preds = model.predict(test_df["text"].tolist())
-        for text, true_intent, pred_intent, difficulty in zip(
+        errors["baseline_errors"] = _collect_errors(
             test_df["text"], test_df["intent"], preds, test_df["difficulty"]
-        ):
-            if true_intent != pred_intent:
-                errors["baseline_errors"].append(
-                    {
-                        "text": text,
-                        "true_intent": true_intent,
-                        "predicted_intent": pred_intent,
-                        "difficulty": difficulty,
-                    }
-                )
+        )
     errors["note"] = (
         f"{len(errors['baseline_errors'])} misclassified examples out of {len(test_df)} "
         "test examples for the baseline model."
     )
     print(errors["note"])
+
+    transformer_path = PROJECT_ROOT / cfg["transformer_model"]["path"]
+    transformer_trained = (transformer_path / "model.safetensors").exists() or (
+        transformer_path / "pytorch_model.bin"
+    ).exists()
+    if transformer_trained:
+        try:
+            from src.models.transformer import TransformerIntentClassifier
+
+            t_model = TransformerIntentClassifier.load(transformer_path)
+            t_preds = t_model.predict(test_df["text"].tolist())
+            errors["transformer_errors"] = _collect_errors(
+                test_df["text"], test_df["intent"], t_preds, test_df["difficulty"]
+            )
+            errors["transformer_note"] = (
+                f"{len(errors['transformer_errors'])} misclassified examples out of "
+                f"{len(test_df)} test examples for the transformer model."
+            )
+            print(errors["transformer_note"])
+        except ImportError:
+            errors["transformer_note"] = (
+                "torch/transformers not installed; transformer error analysis skipped."
+            )
+    else:
+        errors["transformer_note"] = (
+            "Transformer not trained; run scripts/train_transformer.py to include it."
+        )
 
     out = REPORTS_DIR / "error_analysis.json"
     with open(out, "w", encoding="utf-8") as f:
