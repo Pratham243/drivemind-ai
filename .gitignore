@@ -1,0 +1,31 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.env
+*.egg-info/
+build/
+dist/
+
+# Trained model artifacts are large / reproducible — regenerate via scripts/
+models/*.joblib
+models/*.pt
+models/*.bin
+models/transformer/
+models/baseline/
+
+# Generated data (reproducible via scripts/generate_dataset.py)
+data/raw/*.csv
+data/annotated/*.jsonl
+data/processed/*.csv
+
+reports/figures/*.png
+reports/evaluation/*.json
+
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db

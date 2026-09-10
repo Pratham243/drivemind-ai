@@ -1,0 +1,8 @@
+# Transformer-based NLU (optional). Install only if you want to train/run
+# the DistilBERT intent classifier. The rest of the system works without it.
+torch>=2.2
+transformers>=4.38
+datasets>=2.18
+accelerate>=0.27
+spacy>=3.7
+jupyter>=1.0

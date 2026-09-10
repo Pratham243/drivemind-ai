@@ -1,0 +1,142 @@
+# DriveMind AI — intent taxonomy
+# Each intent maps to the entities it may carry and the tool (if any)
+# the agent should invoke once the intent + entities are resolved.
+
+intents:
+  increase_temperature:
+    description: Raise cabin temperature relative to current value
+    entities: [amount]
+    tool: increase_temperature
+
+  decrease_temperature:
+    description: Lower cabin temperature relative to current value
+    entities: [amount]
+    tool: decrease_temperature
+
+  set_temperature:
+    description: Set cabin temperature to an absolute value
+    entities: [temperature]
+    tool: set_temperature
+
+  climate_control:
+    description: Generic climate control request (fan/AC on-off)
+    entities: [mode]
+    tool: set_climate_mode
+
+  vehicle_status:
+    description: General vehicle status request
+    entities: []
+    tool: get_vehicle_status
+
+  battery_status:
+    description: Query current battery level
+    entities: []
+    tool: get_battery_level
+
+  range_query:
+    description: Query remaining driving range
+    entities: []
+    tool: get_range
+
+  tire_pressure:
+    description: Query tire pressure
+    entities: [tire]
+    tool: get_tire_pressure
+
+  find_charging_station:
+    description: Search for EV charging stations
+    entities: [location, minimum_power_kw]
+    tool: find_charging_stations
+
+  find_parking:
+    description: Search for parking near a location
+    entities: [location]
+    tool: find_parking
+
+  start_navigation:
+    description: Start turn-by-turn navigation to a destination
+    entities: [destination]
+    tool: start_navigation
+
+  cancel_navigation:
+    description: Cancel active navigation
+    entities: []
+    tool: cancel_navigation
+
+  navigation:
+    description: Generic navigation / routing question
+    entities: [destination]
+    tool: search_navigation
+
+  traffic_query:
+    description: Ask about current traffic conditions
+    entities: [location]
+    tool: get_traffic
+
+  play_music:
+    description: Start music playback, optionally by genre/artist
+    entities: [music_genre, artist]
+    tool: play_music
+
+  pause_music:
+    description: Pause current playback
+    entities: []
+    tool: pause_music
+
+  next_song:
+    description: Skip to next track
+    entities: []
+    tool: next_song
+
+  change_volume:
+    description: Adjust media volume
+    entities: [volume, direction]
+    tool: change_volume
+
+  make_phone_call:
+    description: Place a phone call to a contact
+    entities: [phone_contact]
+    tool: make_phone_call
+
+  send_message:
+    description: Send a text message to a contact
+    entities: [phone_contact, message_body]
+    tool: send_message
+
+  open_window:
+    description: Open a window
+    entities: [window]
+    tool: open_window
+
+  close_window:
+    description: Close a window
+    entities: [window]
+    tool: close_window
+
+  seat_adjustment:
+    description: Adjust seat position/heating
+    entities: [seat]
+    tool: adjust_seat
+
+  ambient_lighting:
+    description: Change ambient lighting color/intensity
+    entities: [color, intensity]
+    tool: set_ambient_lighting
+
+  restaurant_search:
+    description: Search for restaurants near a location
+    entities: [location, restaurant_cuisine]
+    tool: search_restaurants
+
+  weather_query:
+    description: Ask for weather conditions
+    entities: [location]
+    tool: get_weather
+
+  general_question:
+    description: Out-of-scope / general conversational question with no tool
+    entities: []
+    tool: null
+
+# Intents considered "in scope" for training/classification (excludes generic
+# fallback, which is handled separately by the LLM/agent layer).

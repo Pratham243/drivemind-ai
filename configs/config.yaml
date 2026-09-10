@@ -1,0 +1,47 @@
+# DriveMind AI — central configuration
+
+dataset:
+  seed: 42
+  n_examples: 3000
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  raw_path: data/raw/dataset.csv
+  annotated_path: data/annotated/dataset.jsonl
+  processed_dir: data/processed
+
+baseline_model:
+  path: models/baseline/model.joblib
+  tfidf_max_features: 5000
+  tfidf_ngram_range: [1, 2]
+  logreg_C: 5.0
+  logreg_max_iter: 1000
+
+transformer_model:
+  base_model: distilbert-base-uncased
+  path: models/transformer
+  max_length: 32
+  batch_size: 16
+  learning_rate: 5e-5
+  epochs: 3
+  weight_decay: 0.01
+
+vehicle:
+  initial_battery_pct: 68
+  initial_temperature_c: 20
+  initial_range_km: 320
+  initial_speed_kmh: 0
+
+safety:
+  temperature_min_c: 16
+  temperature_max_c: 30
+  volume_min: 0
+  volume_max: 100
+  max_speed_for_window_open_kmh: 200
+
+api:
+  host: 0.0.0.0
+  port: 8000
+
+logging:
+  level: INFO

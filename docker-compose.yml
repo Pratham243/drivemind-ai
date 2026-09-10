@@ -1,0 +1,26 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - NLU_MODEL=baseline
+      - LOG_LEVEL=INFO
+      # Optionally set OPENAI_API_KEY here (or via `docker compose --env-file .env`)
+      # to enable the real LLM provider; the app runs fine without it.
+    volumes:
+      - ./models:/app/models
+      - ./data:/app/data
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.streamlit
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      - api
