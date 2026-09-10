@@ -29,3 +29,16 @@ reports/evaluation/*.json
 .ipynb_checkpoints/
 .DS_Store
 Thumbs.db
+
+# IDE-specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Test coverage (not currently used, but harmless to exclude proactively)
+.coverage
+htmlcov/

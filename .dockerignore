@@ -11,3 +11,11 @@ tests/
 reports/
 .env
 *.egg-info/
+
+# The Dockerfile generates its own dataset/model during the build (see
+# Dockerfile comments), so these are never COPYd in — excluding them here
+# just avoids uploading a large local data/models tree (which could include
+# a 260MB+ trained transformer) into the Docker build context for nothing.
+data/
+models/
+docs/

@@ -456,7 +456,12 @@ Builds and runs two services:
 ```bash
 pytest tests/ -v
 ```
-**118 tests** (117 passing + 1 conditionally skipped in this environment — see below), across:
+**118 tests total.** The pass/skip split depends on which optional extras are installed
+(tests for the transformer and the real OpenAI provider skip cleanly, not fail, when
+`requirements-ml.txt`/`requirements-llm.txt` aren't installed): **117 passed + 1 skipped**
+with both optional extras installed (this project's primary dev environment), or
+**108 passed + 10 skipped** with only `requirements.txt` installed (what CI's
+`lint-and-test` job actually runs — see [CI/CD](#cicd)). Across:
 - `test_preprocessing.py` — cleaning/tokenization
 - `test_nlu.py` — intent classification, entity extraction (including `artist`, `message_body`,
   and `mode`, three entity types found declared in the schema but never actually
@@ -494,16 +499,47 @@ trained.
 ## CI/CD
 
 `.github/workflows/ci.yml` — on every push/PR to `main`:
-1. Install dependencies.
+1. Install dependencies (`requirements.txt` only — matching the *default*,
+   `NLU_MODEL=baseline` deployment; the transformer/LLM extras are optional and not
+   installed here).
 2. Lint (`ruff check`) and format-check (`black --check`).
 3. Generate the dataset and validate it.
 4. Train the baseline model.
 5. Run the full pytest suite.
-6. (second job) Regenerate data/model artifacts and build the API Docker image.
+6. (second job) Build the API Docker image — no separate data/model regeneration step
+   needed here, since the Dockerfile now generates the dataset and trains the model as
+   part of the image build itself (see [Docker](#docker)).
 
-> **Status: config written, not run.** This CI has not executed on GitHub Actions from this
-> environment (no push has been made to a remote yet). Locally, the exact same lint/format/
-> test commands the workflow runs were executed and passed (see [Testing](#testing)).
+> **Status: config prepared and its exact command sequence verified locally; remote
+> GitHub Actions execution requires pushing the repository to GitHub.** This CI has not
+> executed on GitHub Actions from this environment — no push has been made to a remote.
+> To verify the workflow's actual behavior without a remote push, every command in the
+> `lint-and-test` job was run in sequence, in that order, inside a freshly-created
+> virtualenv containing *only* `requirements.txt` plus `ruff`/`black`/`pytest` (i.e. not
+> whatever optional extras happen to be installed in the primary dev environment) —
+> matching what `actions/setup-python` + the workflow's `Install dependencies` step would
+> produce on a fresh `ubuntu-latest` runner. This is a genuine simulation of the CI
+> environment, not a substitute for actually running it on GitHub.
+>
+> **This caught a real bug**: `src/models/transformer.py` used `@torch.no_grad()` as a
+> bare method decorator, which is evaluated at class-definition time (i.e. at *import*
+> time) rather than when the method is called. In an environment without the optional
+> `torch` dependency installed — exactly what CI's `lint-and-test` job runs — importing
+> the module raised `NameError: name 'torch' is not defined`, which crashed pytest's
+> *collection* phase entirely (`tests/test_transformer.py` imports the module at the top
+> of the file) and would have failed the whole test suite, not just the transformer
+> tests. This was invisible in the primary local dev environment only because `torch`
+> happens to be installed there for other testing. Fixed by moving the `torch.no_grad()`
+> guard from a decorator into a `with` block inside each method body, deferring the
+> reference to `torch` until the method actually runs (see the fix's comment in
+> `src/models/transformer.py: TransformerIntentClassifier.predict` for the full
+> explanation). Re-verified in the same isolated environment afterward:
+> **108 passed, 10 skipped** (the 10 skips are `test_transformer.py`'s 5 tests +
+> `test_llm_provider.py`'s 5 tests, both correctly skipping because `torch`/`openai`
+> aren't in `requirements.txt` — this matches [Testing](#testing)'s 118-test total exactly:
+> 108 + 10 = 118, just with a different pass/skip split than the primary dev environment,
+> which has the optional extras installed and shows 117 passed + 1 skipped instead).
+> `ruff check` and `black --check` also passed in this isolated environment.
 
 ## Evaluation & results
 
@@ -593,7 +629,8 @@ pip install -r requirements.txt          # core (always required)
 # pip install -r requirements-ml.txt     # optional: transformer support
 # pip install -r requirements-llm.txt    # optional: real OpenAI LLM support
 
-cp .env.example .env                     # edit if you want to set OPENAI_API_KEY etc.
+cp .env.example .env                     # Windows cmd: copy .env.example .env
+                                          # edit .env if you want to set OPENAI_API_KEY etc.
 
 python scripts/generate_dataset.py
 python scripts/validate_dataset.py

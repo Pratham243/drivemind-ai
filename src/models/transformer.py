@@ -154,23 +154,33 @@ class TransformerIntentClassifier:
 
         return history
 
-    @torch.no_grad()
     def predict(self, texts: list[str]) -> list[str]:
+        # `with torch.no_grad()` rather than the `@torch.no_grad()` decorator
+        # form: a decorator is evaluated at class-definition time (i.e. when
+        # this module is *imported*), which would reference the bare name
+        # `torch` even if the `import torch` above failed and
+        # TRANSFORMERS_AVAILABLE is False — breaking the import for every
+        # caller, including code that only wants TRANSFORMERS_AVAILABLE
+        # itself. A context manager inside the method body defers the
+        # reference until the method actually runs, by which point torch is
+        # guaranteed installed (see ModelManager, which never constructs
+        # this class otherwise).
         self.model.eval()
-        enc = self._encode(texts)
-        enc = {k: v.to(self.device) for k, v in enc.items()}
-        logits = self.model(**enc).logits
-        pred_ids = torch.argmax(logits, dim=-1).cpu().tolist()
+        with torch.no_grad():
+            enc = self._encode(texts)
+            enc = {k: v.to(self.device) for k, v in enc.items()}
+            logits = self.model(**enc).logits
+            pred_ids = torch.argmax(logits, dim=-1).cpu().tolist()
         return [self.id2label[i] for i in pred_ids]
 
-    @torch.no_grad()
     def predict_one(self, text: str) -> tuple[str, float]:
         self.model.eval()
-        enc = self._encode([text])
-        enc = {k: v.to(self.device) for k, v in enc.items()}
-        logits = self.model(**enc).logits
-        probs = torch.softmax(logits, dim=-1)[0]
-        best_id = int(torch.argmax(probs).item())
+        with torch.no_grad():
+            enc = self._encode([text])
+            enc = {k: v.to(self.device) for k, v in enc.items()}
+            logits = self.model(**enc).logits
+            probs = torch.softmax(logits, dim=-1)[0]
+            best_id = int(torch.argmax(probs).item())
         return self.id2label[best_id], round(float(probs[best_id].item()), 4)
 
     def save(self, path: str | Path) -> None:
