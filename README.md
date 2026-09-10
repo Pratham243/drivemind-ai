@@ -787,46 +787,6 @@ DriveMindAi/
 - No user data is sent to a third-party LLM unless the user explicitly configures
   `OPENAI_API_KEY` — the default operating mode is fully offline.
 
-## Resume bullet points
-
-- Designed and built an end-to-end agentic NLP system for automotive voice assistants,
-  combining a TF-IDF/Logistic Regression baseline, a fine-tuned DistilBERT transformer, and
-  an LLM fallback layer behind a single NLU interface.
-- Implemented a safety-validation layer that mediates every LLM/agent tool call against a
-  simulated vehicle backend, enforcing type, range, and policy constraints before any state
-  mutation — verified with 13 dedicated negative tests.
-- Built a rule-based multi-step task planner enabling compound natural-language requests
-  (e.g. "check battery and find a charger") to be decomposed and executed as multiple tool
-  calls in one turn.
-- Generated and validated a 2,700+ example synthetic NLU dataset with a custom annotation
-  schema, automated data-quality pipeline, and reproducible seeded generation.
-- Shipped a FastAPI backend + Streamlit dashboard exposing a full agent execution trace
-  (intent, entities, tool, safety status, latency) for debuggability.
-- Achieved 98.6% test-set intent classification accuracy with a TF-IDF/Logistic Regression
-  baseline and 99.3% with a fine-tuned DistilBERT transformer (measurably better specifically
-  on typo-corrupted inputs), plus 100% task success on a 16-scenario agent evaluation suite —
-  all metrics computed from real training/evaluation runs and documented error analysis (no
-  fabricated numbers).
-
-## Interview talking points
-
-- **Why not just prompt an LLM for everything?** Cost, latency, determinism, and safety —
-  an LLM-only design can't guarantee it will never accept `set_temperature(1000)`; a typed,
-  validated tool-calling architecture can.
-- **Why TF-IDF *and* a transformer?** To have an honest, real comparison rather than
-  asserting either is better outright. Here the transformer does measurably win (0.9927 vs.
-  0.9855 test accuracy), and specifically on typo-corrupted inputs — a genuinely explainable
-  result (subword tokenization degrades more gracefully than whole-word bag-of-words
-  features) rather than an assumed one. The baseline still ships as the default because a
-  ~0.7-point accuracy gap doesn't justify a ~10-minute CPU training time and a >1GB
-  dependency for every deployment — a concrete example of a real trade-off decision, not
-  just "the fancier model wins."
-- **Why is entity extraction rule-based, not ML-based?** Closed vocabulary automotive
-  domain + need for 100% predictable behavior in a safety-adjacent system; trade-off is
-  explicitly documented as a scalability limitation for open-vocabulary entities.
-- **How would this change for production?** Real STT, real maps/POI APIs behind the tool
-  interfaces (the `ToolResult` contract wouldn't need to change), persistent conversation
-  state, and a formal red-teaming pass on the safety layer.
 
 ## Architecture decisions & trade-offs
 
