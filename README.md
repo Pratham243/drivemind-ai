@@ -1,4 +1,4 @@
-# 🚗 DriveMind AI — Agentic NLP & LLM-Based Intelligent In-Car Assistant
+# 🚗 DriveMind AI - Agentic NLP & LLM-Based Intelligent In-Car Assistant
 
 A Master's-level portfolio project demonstrating an end-to-end automotive conversational AI
 system: NLP preprocessing → traditional ML + transformer NLU → LLM fallback → an agent
