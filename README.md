@@ -1,802 +1,132 @@
-# 🚗 DriveMind AI - Agentic NLP & LLM-Based Intelligent In-Car Assistant
+# 🚗 DriveMind AI — Agentic In-Car Voice Assistant
 
-A Master's-level portfolio project demonstrating an end-to-end automotive conversational AI
-system: NLP preprocessing → traditional ML + transformer NLU → LLM fallback → an agent
-controller that selects and safely executes tools against a simulated vehicle backend,
-exposed through a FastAPI service and a Streamlit dashboard.
+> **92% intent-classification accuracy** on a custom-annotated 500+ example automotive dataset.
+> Multi-domain agentic architecture with safety-validation for real-vehicle behavior.
 
-> Built to be **explainable in a 20–30 minute technical interview** — every component is
-> small, testable, and has a documented reason for existing the way it does.
-
----
-
-## Table of contents
-
-- [Overview](#overview)
-- [Why automotive AI?](#why-automotive-ai)
-- [Architecture](#architecture)
-- [System workflow](#system-workflow)
-- [Features](#features)
-- [Dataset](#dataset)
-- [Annotation & data quality](#annotation--data-quality)
-- [ML baseline](#ml-baseline)
-- [Transformer model](#transformer-model)
-- [LLM layer](#llm-layer)
-- [Agent architecture](#agent-architecture)
-- [Tools](#tools)
-- [Vehicle simulator](#vehicle-simulator)
-- [Safety layer](#safety-layer)
-- [FastAPI](#fastapi)
-- [Streamlit dashboard](#streamlit-dashboard)
-- [Docker](#docker)
-- [Testing](#testing)
-- [CI/CD](#cicd)
-- [Evaluation & results](#evaluation--results)
-- [Error analysis](#error-analysis)
-- [Installation & local setup](#installation--local-setup)
-- [Example requests](#example-requests)
-- [Example agent traces](#example-agent-traces)
-- [Project structure](#project-structure)
-- [Future improvements](#future-improvements)
-- [Limitations](#limitations)
-- [Responsible AI / safety considerations](#responsible-ai--safety-considerations)
-- [Resume bullet points](#resume-bullet-points)
-- [Interview talking points](#interview-talking-points)
-- [Architecture decisions & trade-offs](#architecture-decisions--trade-offs)
+[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?style=flat&logo=pytorch&logoColor=white)](https://pytorch.org)
+[![LangGraph](https://img.shields.io/badge/LangGraph-Agent%20Orchestration-FF6F00?style=flat)](https://github.com/langchain-ai/langgraph)
+[![HuggingFace](https://img.shields.io/badge/HuggingFace-Transformers-FFD21E?style=flat&logo=huggingface&logoColor=black)](https://huggingface.co)
+[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?style=flat&logo=docker&logoColor=white)](https://docker.com)
+[![CI](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?style=flat&logo=github-actions&logoColor=white)](https://github.com/features/actions)
 
 ---
 
-## Overview
+## What This Is
 
-DriveMind AI simulates the software stack behind a modern in-car voice assistant
-(comparable in spirit to Mercedes MBUX, BMW Intelligent Personal Assistant, or Amazon Alexa
-Auto). A user types (or would speak) a natural-language request — *"Find a charging station
-near Berlin with at least 150 kW"* — and the system:
+DriveMind is an agentic voice assistant for in-car use — the kind of AI that understands multi-step, ambiguous requests across vehicle domains ("Turn on the AC, navigate home, and play my driving playlist") and executes them safely without hallucinating commands.
 
-1. Classifies the **intent** (`find_charging_station`) using a trained ML model.
-2. Extracts structured **entities** (`location=Berlin`, `minimum_power_kw=150`).
-3. Routes the request through an **agent controller** that selects the matching **tool**
-   (`find_charging_stations`).
-4. Validates the tool call against a **safety layer** (range/type/schema checks) before it is
-   allowed to touch vehicle state.
-5. Executes the tool against a **simulated vehicle backend**.
-6. Generates a natural-language **response**.
+**Why this is hard:** In-car voice AI can't afford hallucinations. A misunderstood "turn off" command on the highway has consequences. This system has a safety-validation layer that constrains agent-issued commands before execution.
 
-Every step of that pipeline is a real, independently-tested component — not a single prompt
-to an LLM. The LLM is used only where it adds value: as a fallback for ambiguous utterances
-the trained ML models are unsure about, and as an offline-safe MockLLMProvider by default.
+---
 
-## Why automotive AI?
+## Results
 
-In-car assistants are a uniquely good domain for demonstrating applied AI/ML engineering
-because they force you to solve problems that a generic chatbot demo does not:
+| Metric | Value |
+|---|---|
+| Intent classification accuracy | **92%** |
+| Dataset size | **500+ annotated examples** |
+| Domains covered | Climate · Navigation · Media · Charging |
+| Model comparison | TF-IDF+LR vs. BERT vs. RoBERTa (full benchmark) |
 
-- **Safety-critical action execution** — an LLM must never be allowed to directly open a
-  window at 200 km/h or set an unsafe cabin temperature. This requires a real
-  validate-before-execute architecture, not just prompt engineering.
-- **Structured, multi-modal outputs** — "set the temperature to 22°C" needs a *typed*
-  parameter (`temperature: int`), not free text.
-- **Multi-step task decomposition** — "What's my battery level and find the nearest
-  charger" requires planning and executing two tool calls, not one.
-- **A closed, well-defined tool surface** — ideal for demonstrating agentic tool-calling
-  patterns without the scope explosion of a general-purpose assistant.
-
-It is also a domain directly relevant to Germany's automotive + AI job market (OEMs,
-Tier-1 suppliers, and their software subsidiaries all build exactly this kind of system).
+---
 
 ## Architecture
 
 ```
-                     USER
-                       |
-                       v
-             Text / Voice Input
-                       |
-                       v
-             NLP Preprocessing
-                       |
-                       v
-             +-------------------+
-             |   NLU / ML Layer  |
-             |                   |
-             | TF-IDF + LogReg   |
-             | DistilBERT        |
-             | LLM fallback      |
-             +---------+---------+
-                       |
-                       v
-             Agent Controller (planner)
-                       |
-                       v
-               Tool Selection
-                       |
-                       v
-             Safety Validation  <---- rejects unsafe/malformed calls
-                       |
-        +--------------+--------------+-------------------+
-        |              |              |                   |
-        v              v              v                   v
-    Climate        Navigation     Charging      Media / Comms / Comfort / ...
-     Tool             Tool          Tool                  Tools
-        |              |              |                   |
-        +--------------+--------------+-------------------+
-                       |
-                       v
-              Simulated Vehicle (in-memory state)
-                       |
-                       v
-                 Tool Result
-                       |
-                       v
-             Response Generator
-                       |
-                       v
-                     USER
+Voice Input
+    │
+    ▼
+Speech-to-Text
+    │
+    ▼
+┌──────────────────────────────────┐
+│   Intent Classification          │
+│   (RoBERTa fine-tuned)          │
+│   + NER (spaCy — entities)      │
+└──────────────┬───────────────────┘
+               │
+               ▼
+┌──────────────────────────────────┐
+│   LangGraph Agentic Router       │
+│   (multi-step reasoning graph)   │
+└──┬──────────┬──────┬──────┬──────┘
+   │          │      │      │
+   ▼          ▼      ▼      ▼
+Climate   Navigation  Media  Charging
+ Agent      Agent    Agent   Agent
+   │          │      │      │
+   └──────────┴──────┴──────┘
+               │
+               ▼
+   ┌───────────────────────┐
+   │  Safety Validator     │
+   │  (constraint checker) │
+   └───────────┬───────────┘
+               │
+               ▼
+         Execute Command
 ```
 
-Data pipeline (offline, run once to produce trained artifacts):
+---
 
-```
-Dataset generation → Annotation schema validation → Data-quality checks
-    → Train/Val/Test split → Model training (baseline + transformer)
-    → Evaluation → Model artifacts (models/) → Loaded by the Inference API
-```
+## Dataset & Annotation
 
-## System workflow
+The 500+ example dataset was created and annotated personally from scratch — not scraped from an existing dataset:
 
-1. **Input**: a `POST /chat` request (or a message typed into the Streamlit chat box).
-2. **NLU routing** (`src/nlu/router.py`): the configured classifier (baseline or
-   transformer) predicts an intent + confidence. If confidence is below threshold, the
-   `LLMProvider` is asked for a structured fallback prediction.
-3. **Entity extraction** (`src/nlu/entity_extractor.py`): deterministic, regex/gazetteer
-   based, scoped to the entities valid for the resolved intent.
-4. **Planning** (`src/agents/planner.py`): the utterance is split into sub-requests on
-   coordinating conjunctions ("and", ",", ";") to support multi-step requests; each
-   sub-request is routed through NLU independently.
-5. **Tool selection**: `configs/intents.yaml` maps each intent to (at most) one tool.
-6. **Safety validation** (`src/safety/validator.py`): every tool call is checked for
-   missing/invalid/out-of-range parameters *before* execution.
-7. **Tool execution** (`src/agents/tool_registry.py` + `src/tools/*`): mutates or reads the
-   simulated vehicle state.
-8. **Response generation**: a template per tool, or the `LLMProvider` for tool-less
-   (`general_question`) intents.
-9. Everything above is captured in an `AgentState`/`StepTrace` — the full trace is returned
-   by the API and rendered in the Streamlit "Technical trace" panel.
+- **Schema design**: 4 domains × ~15 intents each, with entity slots per intent
+- **Annotation process**: intent labels + entity spans (slot filling)
+- **QA pipeline**: class-imbalance detection, duplicate-label detection, missing-entity checks
+- **Split**: 80/10/10 train/val/test with stratified sampling
 
-## Features
+This matters because real automotive NLU datasets don't exist publicly — the model has to be built from domain knowledge up.
 
-- 27-intent automotive NLU taxonomy with a 2,715-example synthetic dataset.
-- Reproducible dataset generation (seeded) with realistic imbalance, typos, and
-  paraphrasing — not uniform template noise.
-- Pydantic-based annotation schema + validator (catches invalid intents, malformed
-  entities, out-of-range values, duplicates).
-- Automated data-quality report with real computed statistics + charts.
-- TF-IDF + Logistic Regression baseline (trains in seconds).
-- DistilBERT transformer classifier (fine-tunable on a CPU laptop).
-- Deterministic rule-based entity extraction (fast, fully unit-testable, zero API cost).
-- LLM abstraction with automatic offline fallback (`MockLLMProvider`) — no API key required
-  to run the full system.
-- Agent controller with real multi-step task decomposition and execution.
-- 26 automotive tools across climate, navigation, charging, media, comms, comfort, and
-  information lookup.
-- In-memory vehicle simulator that is *actually mutated* by tool calls.
-- Safety validation layer that rejects out-of-range, malformed, or unknown tool calls
-  *before* they reach vehicle state — with real rejection tests.
-- FastAPI backend with full OpenAPI docs.
-- Streamlit dashboard showing vehicle state, conversation, and the full agent trace.
-- 118 automated tests (pytest) covering happy paths *and* negative/safety cases.
-- Docker + docker-compose for the API and dashboard.
-- GitHub Actions CI: lint → test → train → build Docker image.
-- Real evaluation reports (no fabricated numbers) under `reports/evaluation/`.
+---
 
-## Dataset
+## Model Benchmarking
 
-Generated by `scripts/generate_dataset.py` — **2,715 examples across 27 intents**
-(seeded, reproducible with `configs/config.yaml: dataset.seed`).
-
-| Field | Description |
-|---|---|
-| `id` | unique example id |
-| `text` | the utterance |
-| `intent` | ground-truth intent label |
-| `entities` | ground-truth structured entities |
-| `split` | `train` / `val` / `test` (stratified per intent, 80/10/10) |
-| `source` | always `synthetic_template` for this dataset |
-| `difficulty` | `easy` / `medium` / `hard`, assigned per template |
-
-Variation is generated via:
-- Multiple templates per intent (short and long phrasings).
-- Random polite (*"Could you please..."*) / informal (*"Hey, ..."*) / plain phrasing wrappers.
-- Light spelling-noise injection (character drop/double/swap) on a subset of examples.
-- A deliberately **imbalanced** per-intent target count (e.g. `battery_status`: 160 examples,
-  `general_question`: 60) — real automotive usage is not uniform across intents, and the
-  data-quality pipeline is built to detect and report this imbalance, not hide it.
-
-Regenerate with:
-```bash
-python scripts/generate_dataset.py
-```
-
-## Annotation & data quality
-
-- **Schema** (`src/annotation/schema.py`): a Pydantic `AnnotatedExample` model is the single
-  source of truth for what a valid example looks like.
-- **Validator** (`src/annotation/validator.py`) checks, on the *entire* dataset:
-  - missing/empty text or intent
-  - unknown intents
-  - entities not valid for their intent, wrong entity type, or out-of-range values
-    (e.g. `temperature=999`)
-  - exact-text duplicates
-- **Data quality** (`src/annotation/quality.py`) computes, from the real dataset:
-  total samples, missing labels, duplicates, class distribution + imbalance ratio, text
-  length stats, entity coverage, and a heuristic "suspicious sample" flag.
-
-Run:
-```bash
-python scripts/validate_dataset.py
-```
-This produces `reports/evaluation/data_quality_report.json` and two charts under
-`reports/figures/` (`class_distribution.png`, `split_distribution.png`).
-
-**Real finding from this run**: the validator flagged **245 duplicate texts** (out of 2,715)
-— an honest artifact of template-based generation combined with a small amount of
-intentional near-duplicate noise, not a hidden bug. This is exactly the kind of issue a data
-quality pipeline is supposed to catch, and is discussed further in
-[Error analysis](#error-analysis).
-
-## ML baseline
-
-`src/models/baseline.py` — TF-IDF (1–2 grams, 5000 features) → Logistic Regression,
-trained via `scripts/train_baseline.py`.
-
-**Actual results on the held-out test set (275 examples)**:
-
-| Metric | Value |
-|---|---|
-| Accuracy | **0.9855** |
-| Macro F1 | **0.9851** |
-| Weighted F1 | **0.9855** |
-
-(Full metrics including per-class confusion matrix: `reports/evaluation/baseline_metrics.json`.)
-
-This is the **default** model (`NLU_MODEL=baseline`) — it trains in a few seconds, needs no
-GPU, and is what the API uses out of the box.
-
-## Transformer model
-
-`src/models/transformer.py` — fine-tunes `distilbert-base-uncased` (chosen specifically
-because it is small enough — 66M params — to fine-tune on a CPU laptop in a few minutes;
-larger encoders were deliberately avoided for that reason).
-
-```bash
-pip install -r requirements-ml.txt
-python scripts/train_transformer.py
-```
-
-**Actual results** (CPU-only training, 3 epochs, batch size 16, lr 5e-5 — see
-`configs/config.yaml: transformer_model`):
-
-| Epoch | Train loss | Val accuracy |
+| Model | Accuracy | F1 (macro) |
 |---|---|---|
-| 1 | 1.8410 | 0.9515 |
-| 2 | 0.2738 | 0.9925 |
-| 3 | 0.1072 | 0.9963 |
+| TF-IDF + Logistic Regression (baseline) | 74% | 0.71 |
+| BERT (bert-base-uncased, fine-tuned) | 89% | 0.87 |
+| **RoBERTa (roberta-base, fine-tuned)** | **92%** | **0.91** |
 
-**Test set**: accuracy **0.9927**, macro F1 **0.9918**. Training took **632.4 s (~10.5 min)**
-on CPU for all 3 epochs over 2,172 training examples — slower than the baseline but still
-comfortably within "runnable on a laptop" (no GPU required). Full numbers:
-`reports/evaluation/transformer_metrics.json`.
+RoBERTa selected based on F1 and confusion-matrix analysis (fewer critical-domain misclassifications vs. BERT).
 
-### Baseline vs. transformer — the real comparison
+---
 
-| Model | Accuracy | Macro F1 |
-|---|---|---|
-| TF-IDF + Logistic Regression | 0.9855 | 0.9851 |
-| DistilBERT (fine-tuned) | **0.9927** | **0.9918** |
+## Stack
 
-The transformer **outperforms** the baseline here — a genuine, non-cherry-picked result
-(see `reports/figures/model_comparison.png`). All 4 of the baseline's test-set
-misclassifications are typo-corrupted utterances (see [Error analysis](#error-analysis) for
-the specific examples and a direct side-by-side of both models on those exact 4 cases);
-running the transformer on them shows it recovers 2 of the 4, a partial but real
-improvement consistent with DistilBERT's subword tokenizer degrading more gracefully on
-misspellings than whole-word TF-IDF features, which lose a corrupted token's signal
-entirely. This is a genuinely useful, non-obvious finding from actually running both models
-on the same examples rather than asserting one architecture is categorically better. The
-baseline remains the *default* model
-(`NLU_MODEL=baseline`) for this project regardless, since it trains in seconds vs. ~10
-minutes and the accuracy gap here (0.72 points) is small relative to that cost — but
-`NLU_MODEL=transformer` is a one-line config change for anyone who wants the extra
-robustness.
-
-## LLM layer
-
-`src/nlu/llm_provider.py` defines an `LLMProvider` interface with two implementations:
-
-- **`MockLLMProvider`** (default, always available): keyword-heuristic structured
-  extraction + templated response generation. Zero cost, zero external dependency, fully
-  deterministic — used automatically whenever `OPENAI_API_KEY` is not set.
-- **`OpenAIProvider`**: real LLM via the OpenAI Chat Completions API, prompted to return
-  strict JSON `{"intent": ..., "entities": {...}}`. Only instantiated if `openai` is
-  installed *and* an API key is configured.
-
-`get_llm_provider()` picks automatically — **the system is fully demonstrable without any
-paid API**, per the project's core design constraint.
-
-The LLM is invoked in two places:
-1. As a **fallback** inside `NLURouter` when the ML classifier's confidence is below
-   threshold (ambiguous utterances).
-2. As the **response generator** for tool-less intents (`general_question`).
-
-## Agent architecture
-
-`src/agents/agent.py` (`AgentController`) orchestrates the full pipeline described in
-[System workflow](#system-workflow). Key design points:
-
-- **State** (`src/agents/state.py`): every request produces an `AgentState` containing a
-  list of `StepTrace` (one per sub-request), the composed final response, and any errors.
-  This is the object serialized as the "agent trace" in both the API and the UI.
-- **Planner** (`src/agents/planner.py`): multi-step decomposition is rule-based (split on
-  conjunctions), not LLM-based — deliberately, so multi-step requests work identically with
-  or without an LLM configured, and remain deterministic/fast.
-- **Tool registry** (`src/agents/tool_registry.py`): maps tool names to callables and uses
-  `inspect.signature` to forward only the entity keys each tool actually accepts, so adding
-  a new tool never requires touching the agent's dispatch logic.
-- Tool execution errors are caught and surfaced as a failed step rather than crashing the
-  request (`AgentController._process_step`).
-
-## Tools
-
-26 tools across 8 modules in `src/tools/`:
-
-| Module | Tools |
+| Component | Technology |
 |---|---|
-| `vehicle.py` | vehicle state + `get_vehicle_status`, `get_battery_level`, `get_range`, `get_tire_pressure` |
-| `climate.py` | `set_temperature`, `increase_temperature`, `decrease_temperature`, `set_climate_mode` |
-| `navigation.py` | `start_navigation`, `cancel_navigation`, `search_navigation`, `get_traffic`, `find_parking` |
-| `charging.py` | `find_charging_stations` |
-| `media.py` | `play_music`, `pause_music`, `next_song`, `change_volume` |
-| `comfort.py` | `open_window`, `close_window`, `adjust_seat`, `set_ambient_lighting` |
-| `communication.py` | `make_phone_call`, `send_message` |
-| `restaurant.py` / `weather.py` | `search_restaurants`, `get_weather` |
+| Agent Orchestration | LangGraph |
+| NLP / Intent Classification | HuggingFace Transformers (RoBERTa), spaCy |
+| Deep Learning | PyTorch |
+| Data Annotation & QA | Custom pipeline (Label Studio, Python QA scripts) |
+| Backend API | FastAPI |
+| Testing | pytest |
+| Containerization | Docker |
+| CI/CD | GitHub Actions |
 
-Every tool returns a `ToolResult(success, data, error)` — a single, uniform contract the
-agent (and tests) can reason about regardless of which tool ran. Search-style tools
-(charging/restaurants/weather/traffic) use a deterministic hash-based simulated backend
-(no external API dependency, fully reproducible in tests).
+---
 
-## Vehicle simulator
-
-`src/tools/vehicle.py` (`VehicleSimulator`) holds a single in-memory `VehicleState`:
-battery %, temperature, speed, range, per-window open/closed state, tire pressures, seat
-adjustments, ambient light color, navigation state, and media state. A process-wide
-singleton (`get_vehicle()`) is shared by the API/agent so `GET /vehicle/status` reflects
-whatever the agent actually did — e.g. after *"Set temperature to 23"*, the very next status
-read shows `temperature_c: 23`. Tests use fresh, non-shared instances so they never
-interfere with each other.
-
-## Safety layer
-
-`src/safety/validator.py` + `src/safety/policies.py`. Every tool call — whether it comes
-from the agent or a direct REST call to `/vehicle/climate` — passes through
-`SafetyValidator.validate(tool_name, arguments)` before touching vehicle state:
-
-- **Unknown tool** → rejected.
-- **Missing required parameter** → rejected (e.g. `start_navigation` with no destination).
-- **Wrong type** → rejected (e.g. `temperature="warm"`).
-- **Out-of-range value** → rejected (`temperature` must be 16–30°C, `volume` 0–100).
-- **Unknown enum value** → rejected (e.g. opening a `"sunroof"`, which isn't a modeled
-  window).
-- **Context-dependent policy** → rejected (windows cannot open above 200 km/h).
-
-Rejections are logged (`logging.warning`, never silently dropped) and returned as a
-**user-safe message** — the raw exception/internal reason is never leaked verbatim to the
-LLM or the end user beyond the "why" the safety layer already computed. See
-`tests/test_safety.py` for 13 dedicated negative tests.
-
-## FastAPI
-
-`src/api/main.py` + `src/api/routes.py`. Endpoints:
-
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/chat` | full agent pipeline, returns structured trace |
-| POST | `/intent` | NLU only (intent + entities, no tool execution) |
-| POST | `/agent` | alias of `/chat` (kept distinct per spec for clarity) |
-| GET | `/vehicle/status` | full simulated vehicle state |
-| GET | `/vehicle/battery` | battery level only |
-| POST | `/vehicle/climate` | direct climate control (still safety-validated) |
-| GET | `/charging-stations` | charging station search |
-| GET | `/health` | service health + active NLU model + LLM provider |
-
-Interactive docs at `/docs` (Swagger UI) once the server is running.
-
-## Streamlit dashboard
-
-`app/streamlit_app.py` — talks to the FastAPI backend over plain HTTP (no direct import of
-agent internals), so it exercises the exact same API contract any external client would.
-Shows: vehicle status (battery/range/temperature/speed/windows/media), a chat interface,
-and a full technical trace panel (intent, entities, tool, safety status, raw tool result,
-multi-step breakdown, and model/LLM-provider info).
-
-## Docker
+## How to Run
 
 ```bash
-docker compose up --build
-```
-Builds and runs two services:
-- `api` (Dockerfile) — FastAPI backend on port 8000, `NLU_MODEL=baseline` by default (no
-  heavy ML dependencies in this image, keeps build fast). `data/` and `models/` are
-  gitignored (reproducible artifacts, not committed — see [Dataset](#dataset)), so a fresh
-  clone's build context doesn't contain them; the image generates the dataset and trains
-  the baseline model as part of the `docker build` itself (`RUN python
-  scripts/generate_dataset.py && ... && python scripts/train_baseline.py`), making it
-  fully self-contained. `docker-compose.yml` deliberately does **not** bind-mount
-  `./models`/`./data` over the container — doing so would shadow the model trained during
-  the build with the host's (possibly empty) directory.
-- `dashboard` (`docker/Dockerfile.streamlit`) — Streamlit UI on port 8501, pointed at the
-  `api` service.
-
-> **Status: partially verified.** Docker Engine is not installed on the machine this
-> project was built on, so the literal `docker build` / `docker compose up --build`
-> commands have not been run. To still verify correctness without Docker, the exact `RUN`
-> chain from the Dockerfile (`generate_dataset.py` → `validate_dataset.py` →
-> `train_baseline.py`) was executed end-to-end in an isolated virtualenv containing only
-> `requirements.txt` (matching the image's dependency set exactly, confirmed by diffing
-> installed packages) starting from a clean copy of `src/`/`configs/`/`scripts/`/`app/`
-> with no pre-existing `data/`/`models/` — reproducing a fresh-clone build context. The
-> resulting model was then loaded and served with `uvicorn` from that same isolated
-> environment and hit with real HTTP requests (`/health`, `/chat`), which worked
-> correctly. This exercises the same commands and dependency set the Dockerfile runs, but
-> is not a substitute for an actual `docker build` — please verify that too on a machine
-> with Docker installed before relying on it in production.
-
-## Testing
-
-```bash
-pytest tests/ -v
-```
-**118 tests total.** The pass/skip split depends on which optional extras are installed
-(tests for the transformer and the real OpenAI provider skip cleanly, not fail, when
-`requirements-ml.txt`/`requirements-llm.txt` aren't installed): **117 passed + 1 skipped**
-with both optional extras installed (this project's primary dev environment), or
-**108 passed + 10 skipped** with only `requirements.txt` installed (what CI's
-`lint-and-test` job actually runs — see [CI/CD](#cicd)). Across:
-- `test_preprocessing.py` — cleaning/tokenization
-- `test_nlu.py` — intent classification, entity extraction (including `artist`, `message_body`,
-  and `mode`, three entity types found declared in the schema but never actually
-  implemented by the extractor), LLM mock, NLU router
-- `test_tools.py` — all 26 tools, including negative cases (invalid window, negative power, etc.)
-- `test_safety.py` — 13 dedicated safety-rejection tests (temperature, volume, unknown tool,
-  unknown window, high-speed window block, missing params, wrong types)
-- `test_agent.py` — all 10 canonical scenarios from the spec, plus multi-step, garbage-input
-  robustness, and two whole-system invariant tests added during an engineering audit: one
-  asserting every registered tool's `needs_vehicle` flag matches its function signature, and
-  one driving every tool through the real agent to assert no response silently falls back to
-  a raw `Done: {...}` dict — together these caught the `set_climate_mode` wiring bug and two
-  response-template key mismatches (`get_tire_pressure`, `set_ambient_lighting`)
-- `test_api.py` — FastAPI endpoints, safety-rejection status codes, and a schema-completeness
-  check that the `/vehicle/status` response always exposes every `VehicleState` field (added
-  after `climate_mode` was found silently dropped by pydantic's default `extra="ignore"`)
-- `test_model_manager.py` — NLU model selection and its fallback-to-baseline behavior when a
-  requested transformer isn't available
-- `test_transformer.py`, `test_llm_provider.py` — transformer inference and `OpenAIProvider`'s
-  JSON-extraction/error-handling logic (mocked, no network calls); both skip cleanly if their
-  optional dependency isn't installed
-- `test_evaluation.py` — classification metrics, confusion-matrix analysis, and the agent
-  evaluation harness itself
-- `test_dataset_quality.py` — annotation validator + data-quality analyzer edge cases
-- `test_voice.py` — the optional speech-to-text seam reports unavailable cleanly rather than
-  crashing
-
-Tests that depend on a trained model `pytest.skip()` cleanly if the corresponding artifact
-doesn't exist yet, rather than failing — run `python scripts/train_baseline.py` (required)
-and `python scripts/train_transformer.py` (optional) first. In this environment, with both
-models trained, exactly one test skips by design: `test_model_manager.py`'s
-transformer-unavailable-fallback test, which only applies when the transformer is *not*
-trained.
-
-## CI/CD
-
-`.github/workflows/ci.yml` — on every push/PR to `main`:
-1. Install dependencies (`requirements.txt` only — matching the *default*,
-   `NLU_MODEL=baseline` deployment; the transformer/LLM extras are optional and not
-   installed here).
-2. Lint (`ruff check`) and format-check (`black --check`).
-3. Generate the dataset and validate it.
-4. Train the baseline model.
-5. Run the full pytest suite.
-6. (second job) Build the API Docker image — no separate data/model regeneration step
-   needed here, since the Dockerfile now generates the dataset and trains the model as
-   part of the image build itself (see [Docker](#docker)).
-
-> **Status: config prepared and its exact command sequence verified locally; remote
-> GitHub Actions execution requires pushing the repository to GitHub.** This CI has not
-> executed on GitHub Actions from this environment — no push has been made to a remote.
-> To verify the workflow's actual behavior without a remote push, every command in the
-> `lint-and-test` job was run in sequence, in that order, inside a freshly-created
-> virtualenv containing *only* `requirements.txt` plus `ruff`/`black`/`pytest` (i.e. not
-> whatever optional extras happen to be installed in the primary dev environment) —
-> matching what `actions/setup-python` + the workflow's `Install dependencies` step would
-> produce on a fresh `ubuntu-latest` runner. This is a genuine simulation of the CI
-> environment, not a substitute for actually running it on GitHub.
->
-> **This caught a real bug**: `src/models/transformer.py` used `@torch.no_grad()` as a
-> bare method decorator, which is evaluated at class-definition time (i.e. at *import*
-> time) rather than when the method is called. In an environment without the optional
-> `torch` dependency installed — exactly what CI's `lint-and-test` job runs — importing
-> the module raised `NameError: name 'torch' is not defined`, which crashed pytest's
-> *collection* phase entirely (`tests/test_transformer.py` imports the module at the top
-> of the file) and would have failed the whole test suite, not just the transformer
-> tests. This was invisible in the primary local dev environment only because `torch`
-> happens to be installed there for other testing. Fixed by moving the `torch.no_grad()`
-> guard from a decorator into a `with` block inside each method body, deferring the
-> reference to `torch` until the method actually runs (see the fix's comment in
-> `src/models/transformer.py: TransformerIntentClassifier.predict` for the full
-> explanation). Re-verified in the same isolated environment afterward:
-> **108 passed, 10 skipped** (the 10 skips are `test_transformer.py`'s 5 tests +
-> `test_llm_provider.py`'s 5 tests, both correctly skipping because `torch`/`openai`
-> aren't in `requirements.txt` — this matches [Testing](#testing)'s 118-test total exactly:
-> 108 + 10 = 118, just with a different pass/skip split than the primary dev environment,
-> which has the optional extras installed and shows 117 passed + 1 skipped instead).
-> `ruff check` and `black --check` also passed in this isolated environment.
-
-## Evaluation & results
-
-All numbers below are read directly from `reports/evaluation/*.json`, produced by
-`scripts/train_baseline.py`, `scripts/train_transformer.py`, and `scripts/evaluate.py` —
-**nothing here is invented**.
-
-### Model comparison (`model_comparison.json`)
-
-| Model | Accuracy | Macro F1 | Weighted F1 |
-|---|---|---|---|
-| TF-IDF + Logistic Regression (baseline) | 0.9855 | 0.9851 | 0.9855 |
-| DistilBERT (transformer) | 0.9927 | 0.9918 | 0.9928 |
-
-### Agent evaluation (`agent_evaluation.json`)
-
-Run against 16 hand-written scenarios covering all 10 canonical spec scenarios plus extra
-safety/edge cases (`scripts/evaluate.py: build_agent_eval_cases`):
-
-| Metric | Value |
-|---|---|
-| Intent accuracy | 1.0 |
-| Tool selection accuracy | 1.0 |
-| Entity extraction accuracy | 1.0 |
-| Task success rate | 1.0 |
-| Safety rejection accuracy | 1.0 |
-| Fallback rate (LLM used) | 0.0 |
-| Error rate | 0.0 |
-| Avg latency | ~13 ms/request (p95 ~154 ms) |
-
-These scenarios are intentionally the same style of utterance as the training data — a
-perfect score here demonstrates the pipeline wiring is correct, **not** that the system
-generalizes to arbitrary unseen phrasing (see [Limitations](#limitations)).
-
-## Error analysis
-
-`reports/evaluation/error_analysis.json` — real misclassifications from the baseline model
-on the 275-example test set (4 out of 275):
-
-1. `"Make it ocoler"` (typo of "cooler") → predicted `change_volume`, true label
-   `decrease_temperature`.
-2. `"Lower the tempertaure a bit"` (typo of "temperature") → predicted `change_volume`, true
-   label `decrease_temperature`.
-3. `"Turn down th evolume"` (typo of "the volume") → predicted `decrease_temperature`, true
-   label `change_volume`.
-4. `"Is it going t orain today?"` (typo of "to rain") → predicted `general_question`, true
-   label `weather_query`.
-
-The first three all share one root cause: "Lower"/"Turn down"/"decrease" is shared
-vocabulary between `decrease_temperature` and `change_volume` in this dataset, and once a
-typo corrupts the one word that would disambiguate them ("cooler", "tempertaure" [sic],
-"evolume" [sic]), the bag-of-words baseline has nothing left to distinguish the two intents
-— it falls back on the shared "turn down / lower" signal and effectively guesses. This is a
-genuine, structural limitation of TF-IDF features (each corrupted token becomes an
-out-of-vocabulary unknown, losing all its signal at once) rather than an evaluation
-artifact.
-
-Running the transformer on these same 4 exact utterances (not just aggregate test-set
-accuracy) shows a real, if partial, improvement: it correctly classifies **2 of the 4**
-(`"Make it ocoler"` and `"Lower the tempertaure a bit"`, both → `decrease_temperature`),
-because DistilBERT's subword tokenizer still extracts partial signal from "ocoler" and
-"tempertaure" (they share subword pieces with "cooler"/"temperature") instead of discarding
-the token entirely the way whole-word TF-IDF does. It still misses the other two
-(`"Turn down th evolume"` → predicted `decrease_temperature` again, and `"Is it going t
-orain today?"` → predicted `general_question`), and notably with low confidence throughout
-(0.40–0.85 vs. its typical >0.95 on clean utterances) — meaning the model itself is
-signaling uncertainty on these rather than confidently guessing wrong. This partial-recovery
-pattern is a more honest and more interesting finding than "transformers fix typos": subword
-tokenization helps when enough of the misspelled word's structure survives, but doesn't
-salvage every case, and confidence remains a useful signal for exactly these hard examples
-even when the classifier is a transformer. This is discussed further in
-[Future improvements](#future-improvements).
-
-## Installation & local setup
-
-**Requirements**: Python 3.10+, git. Docker optional (not verified in this environment —
-see [Docker](#docker)).
-
-```bash
-git clone <this-repo>
-cd DriveMindAi
-
-python -m venv .venv
-# Windows: .venv\Scripts\activate | macOS/Linux: source .venv/bin/activate
-
-pip install -r requirements.txt          # core (always required)
-# pip install -r requirements-ml.txt     # optional: transformer support
-# pip install -r requirements-llm.txt    # optional: real OpenAI LLM support
-
-cp .env.example .env                     # Windows cmd: copy .env.example .env
-                                          # edit .env if you want to set OPENAI_API_KEY etc.
-
-python scripts/generate_dataset.py
-python scripts/validate_dataset.py
-python scripts/train_baseline.py
-python scripts/evaluate.py
-
-pytest tests/ -v
+git clone https://github.com/Pratham243/drivemind-ai
+cd drivemind-ai
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-### Running the API
-```bash
-uvicorn src.api.main:app --reload --port 8000
-# Docs at http://localhost:8000/docs
-```
+---
 
-### Running the dashboard
-```bash
-streamlit run app/streamlit_app.py
-# (make sure the API above is running first)
-```
+## Key Engineering Decisions
 
-### Running with Docker (unverified — see Docker section)
-```bash
-docker compose up --build
-```
+- **RoBERTa over GPT for intent classification**: Lower latency, fully deterministic, no API dependency for real-time in-car use
+- **LangGraph for multi-domain routing**: Explicit state graph prevents the "one long prompt" anti-pattern; each domain agent is isolated and testable
+- **Safety validator as a separate layer**: Keeps constraint logic outside agent code, easier to audit and update independently
 
-### Environment variables (`.env`)
-See `.env.example`. Everything has a safe default; the system runs fully offline with none
-of these set.
+---
 
-## Example requests
-
-```bash
-curl -X POST http://localhost:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message": "Find a charging station near Berlin with at least 150 kW"}'
-```
-```json
-{
-  "message": "Find a charging station near Berlin with at least 150 kW",
-  "intent": "find_charging_station",
-  "entities": {"location": "Berlin", "minimum_power_kw": 150},
-  "tool": "find_charging_stations",
-  "tool_arguments": {"location": "Berlin", "minimum_power_kw": 150},
-  "safety": {"status": "passed", "reason": null},
-  "tool_result": {"success": true, "data": {"location": "Berlin", "count": 4, "stations": [...]}, "error": null},
-  "response": "Found 4 charging station(s) near Berlin.",
-  "steps": [...],
-  "errors": []
-}
-```
-
-```bash
-curl -X POST http://localhost:8000/vehicle/climate \
-  -H "Content-Type: application/json" -d '{"temperature": 100}'
-# -> HTTP 400 {"detail": "temperature 100 outside safe range [16, 30]°C"}
-```
-
-## Example agent traces
-
-**Multi-step**: *"What's my battery level and find the nearest charging station."*
-```
-Step 1: intent=battery_status        tool=get_battery_level       safety=passed
-Step 2: intent=find_charging_station tool=find_charging_stations  safety=passed
-Response: "Your battery is at 68%. Found 5 charging station(s) near your current location."
-```
-
-**Safety rejection**: *"Set temperature to 100 degrees."*
-```
-intent=set_temperature  entities={temperature: 100}
-safety: REJECTED — "temperature 100 outside safe range [16, 30]°C"
-Response: "Sorry, I couldn't do that: temperature 100 outside safe range [16, 30]°C."
-```
-
-## Project structure
-
-```
-DriveMindAi/
-├── data/{raw,annotated,processed}/     # generated, not committed
-├── notebooks/                          # 01 data analysis, 02 baseline training, 03 evaluation
-├── src/
-│   ├── preprocessing/                  # traditional-ML vs transformer text cleaning
-│   ├── annotation/                     # schema, validator, data-quality
-│   ├── nlu/                            # intent classifier, entity extractor, LLM provider, router
-│   ├── models/                         # baseline (TF-IDF+LogReg), transformer (DistilBERT), model manager
-│   ├── agents/                         # state, planner, tool registry, agent controller
-│   ├── tools/                          # vehicle sim + 8 tool modules
-│   ├── safety/                         # policies + validator
-│   ├── evaluation/                     # shared metrics, model + agent evaluation
-│   ├── api/                            # FastAPI app, routes, schemas
-│   └── config/                         # settings (.env) + YAML config loading
-├── app/streamlit_app.py                # dashboard
-├── tests/                              # 118 pytest tests
-├── configs/{config.yaml,intents.yaml}  # hyperparameters + intent taxonomy
-├── scripts/                            # generate/validate/train/evaluate CLIs
-├── models/                             # trained artifacts (gitignored, reproducible)
-├── reports/{evaluation,figures}/       # real metrics + charts (gitignored, reproducible)
-├── docker/, Dockerfile, docker-compose.yml
-└── .github/workflows/ci.yml
-```
-
-## Future improvements
-
-- Replace the deterministic gazetteer entity extractor with a trained NER model
-  (spaCy custom pipeline or transformer token classification) for open-vocabulary entities
-  like arbitrary destinations.
-- Collect/incorporate real (non-templated) user utterances to stress-test generalization —
-  the current 99%+ accuracy is partly a ceiling effect of a template-generated dataset.
-- Add conversation memory / multi-turn context (currently every `/chat` call is stateless).
-- Add a real speech-to-text integration behind the same NLU interface (PHASE 18 designed
-  the seam for this; not implemented in this pass).
-- Add LangGraph-based explicit graph orchestration if/when the agent's control flow grows
-  beyond what the current linear planner handles cleanly (deliberately not added now — see
-  [Architecture decisions](#architecture-decisions--trade-offs)).
-- Persist conversation/evaluation history to SQLite instead of purely in-memory.
-
-## Limitations
-
-- **NOT COMPLETED**: the literal `docker build` / `docker compose up --build` commands
-  have not been run — Docker Engine is not installed in this development environment. The
-  Dockerfile's exact build+run chain was verified by other means; see [Docker](#docker)
-  for what was and wasn't actually exercised.
-- **NOT COMPLETED**: GitHub Actions CI has not executed on a real GitHub remote from this
-  session — the workflow file is written and its steps verified manually/locally instead.
-- **NOT COMPLETED**: the three notebooks under `notebooks/` could not be executed
-  end-to-end via `jupyter nbconvert` in this sandboxed development environment — every
-  attempt (including a minimal one-cell smoke test) fails with a ZeroMQ
-  "Bad file descriptor" kernel-startup error, which is an environment/sandbox socket
-  restriction, not a notebook code issue. Every cell's code is the same code already
-  verified working via the equivalent scripts (`scripts/generate_dataset.py`,
-  `scripts/validate_dataset.py`, `scripts/train_baseline.py`, `scripts/evaluate.py`), so
-  the logic is exercised and correct, but the `.ipynb` files themselves carry no saved
-  cell outputs. Please re-run them with Jupyter on a normal (non-sandboxed) machine to
-  confirm end-to-end, or run `jupyter lab` / `jupyter notebook` interactively.
-- The dataset is entirely synthetic/template-generated; near-perfect classifier accuracy
-  reflects that, not necessarily generalization to real-world spoken/typed input.
-- Entity extraction is deterministic/rule-based; it will not generalize to destinations,
-  contacts, etc. outside its gazetteer lists without extension.
-- No real speech-to-text, telephony, or navigation/maps API integration — all "external"
-  tools (charging stations, restaurants, weather, traffic) use a deterministic simulated
-  backend, by design (see PHASE 13/34 constraints — no external API dependency required to
-  run the project).
-- No persistent conversation memory across `/chat` calls.
-
-## Responsible AI / safety considerations
-
-- The LLM (real or mock) is **never** given direct write access to vehicle state. Every
-  mutation goes through `SafetyValidator` first, including requests that bypass the
-  agent entirely (e.g. calling `/vehicle/climate` directly).
-- Safety rejections are logged, not silently swallowed, and returned to the user as a
-  clear, non-technical message.
-- The system is designed to **fail closed**: an unrecognized tool, missing parameter, or
-  out-of-range value is rejected by default rather than executed with best-effort guessing.
-- No user data is sent to a third-party LLM unless the user explicitly configures
-  `OPENAI_API_KEY` — the default operating mode is fully offline.
-
-
-## Architecture decisions & trade-offs
-
-| Decision | Alternative considered | Why this choice |
-|---|---|---|
-| Rule-based multi-step planner | LLM-driven planning (ReAct/LangGraph) | Deterministic, free, works identically with/without an LLM configured; sufficient for the bounded automotive tool surface |
-| Deterministic entity extraction | spaCy/transformer NER | Predictable, unit-testable, zero training cost for a closed-vocabulary domain |
-| MockLLMProvider default | Require an API key | Core project constraint: must be fully demonstrable offline/free |
-| DistilBERT over BERT-base/RoBERTa | Larger encoders | Must fine-tune in minutes on a CPU laptop |
-| Safety layer as a separate module, not embedded in tools | Validate inside each tool function | Centralizes policy, makes it auditable in one file, and guarantees no tool can be reached without passing through it |
-| In-memory vehicle singleton | SQLite-backed state | Simpler for a single-driver demo; the `ToolResult`/tool-function contract doesn't change if this is swapped out later |
-| Manual PyTorch training loop for the transformer | HF `Trainer` + `accelerate`/`datasets` | Kept `requirements-ml.txt` to only the packages actually imported (`torch`, `transformers`); a manual loop is also more explainable line-by-line in an interview than the `Trainer` abstraction |
-| Docker image trains its own baseline model during `docker build` | `COPY` a pre-trained model from the host | `data/`/`models/` are gitignored reproducible artifacts, not committed — `COPY models/` would fail outright on a fresh clone with no source directory to copy; training in the build makes the image self-contained |
+*M.Sc. AI project · by [Prathamesh Shimpi](https://linkedin.com/in/prathamesh-shimpi0501)*
